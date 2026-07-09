@@ -1,0 +1,35 @@
+{
+  "name": "cortex",
+  "version": "0.1.0",
+  "description": "Cortex — a permanent, decentralized memory layer for the AI agent economy. Agent Service Provider for OKX.AI.",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "wallet:generate": "node server/services/storage/scripts/generateWallet.js",
+    "registry:compile": "hardhat compile",
+    "registry:deploy:testnet": "hardhat run scripts/deployRegistry.js --network xlayerTestnet",
+    "registry:deploy:mainnet": "hardhat run scripts/deployRegistry.js --network xlayerMainnet",
+    "mcp:start": "node mcp/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8",
+    "uuid": "^9.0.1",
+    "arweave": "^1.15.1",
+    "ethers": "^6.13.2",
+    "redis": "^4.7.0",
+    "@modelcontextprotocol/sdk": "^1.11.0",
+    "@okxweb3/x402-express": "latest",
+    "@okxweb3/x402-core": "latest",
+    "@okxweb3/x402-evm": "latest"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4",
+    "hardhat": "^2.22.10",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+  }
+}

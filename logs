@@ -1,0 +1,13 @@
+[7/9/2026, 1:05:04 AM] GET /mint/_LG__NObHQDDWt4MGdoraPsGZW2KTTnMOkADfvdwEo0/1000000000000 200 35ms 
+[7/9/2026, 1:05:30 AM] GET /tx_anchor 200 2ms 
+[7/9/2026, 1:05:30 AM] GET /price/217 200 2ms 
+[7/9/2026, 1:05:30 AM] POST /tx 200 104ms 
+[7/9/2026, 1:05:39 AM] GET /tx_anchor 200 2ms 
+[7/9/2026, 1:05:39 AM] GET /price/215 200 1ms 
+[7/9/2026, 1:05:40 AM] POST /tx 200 74ms 
+[7/9/2026, 1:05:51 AM] GET /tx_anchor 200 4ms 
+[7/9/2026, 1:05:51 AM] GET /price/579 200 3ms 
+[7/9/2026, 1:05:51 AM] POST /tx 200 73ms 
+[7/9/2026, 1:06:34 AM] GET /tx_anchor 200 3ms 
+[7/9/2026, 1:06:34 AM] GET /price/579 200 0ms 
+[7/9/2026, 1:06:35 AM] POST /tx 200 76ms 

@@ -1,0 +1,28 @@
+{
+  "name": "cortex",
+  "description": "Permanent, decentralized memory layer for AI agents. Write, recall, and query verifiable memory objects anchored on X Layer and stored permanently via Arweave.",
+  "version": "0.1.0",
+  "registration_endpoint": "https://<your-deployed-domain>/mcp — this is what you give OKX.AI during A2MCP registration, confirmed via web3.okx.com/onchainos/dev-docs/okxai/howtomcp.md. Requires public HTTPS; Railway's default *.up.railway.app domain satisfies this with no extra setup.",
+  "not_the_registration_endpoint": "server/index.js's plain REST routes (/memory/write etc.) are for direct HTTP/x402 callers, not A2MCP. mcp/server.js (stdio) is local-only, for testing with Claude Code/Cursor — the internet can't reach it.",
+  "tools": [
+    {
+      "name": "write_memory",
+      "description": "Permanently store a structured memory object (event, decision, outcome, preference, or conversation summary) for an agent. Returns a content-addressed id and an on-chain anchor proof.",
+      "http_endpoint": "POST /memory/write",
+      "pricing_env_var": "X402_PRICE_WRITE_MEMORY"
+    },
+    {
+      "name": "recall_memory",
+      "description": "Retrieve a previously written memory object by id, with on-chain verification that it hasn't been tampered with.",
+      "http_endpoint": "GET /memory/recall/:id",
+      "pricing_env_var": "X402_PRICE_RECALL_MEMORY"
+    },
+    {
+      "name": "query_memory",
+      "description": "Query an agent's memory history, optionally filtered by type (event, decision, outcome, preference, conversation).",
+      "http_endpoint": "GET /memory/query",
+      "pricing_env_var": "X402_PRICE_QUERY_MEMORY"
+    }
+  ],
+  "note": "Registration is conversational, not a static form (confirmed via web3.okx.com/onchainos/dev-docs/okxai/registerasp.md): install Onchain OS Skills (`npx skills add okx/onchainos-skills --yes -g`), log in to Agentic Wallet, then prompt your agent 'Help me register an A2MCP ASP on OKX.AI using Onchain OS' and supply service name, description, price per call, and the /mcp endpoint URL above. Test the /mcp endpoint first with the official MCP Inspector (`npx @modelcontextprotocol/inspector`) before registering. Payment billing for A2MCP calls is handled by OKX.AI itself once listed — separate from the x402 gate on the plain REST routes. Review takes up to 2 business days."
+}
