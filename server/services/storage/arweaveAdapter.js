@@ -25,11 +25,21 @@ let _walletKey = null;
 function loadWallet() {
   if (_walletKey) return _walletKey;
 
+  // Prefer an inline JSON env var (used on platforms like Railway where
+  // the gitignored keyfile isn't present on disk) over the file path.
+  const walletJson = process.env.ARWEAVE_WALLET_JSON;
+  if (walletJson) {
+    _walletKey = JSON.parse(walletJson);
+    return _walletKey;
+  }
+
   const walletPath = process.env.ARWEAVE_WALLET_JSON_PATH;
   if (!walletPath || !fs.existsSync(walletPath)) {
     throw new Error(
-      `Arweave wallet keyfile not found at "${walletPath}". Generate one with ` +
-      `"npm run wallet:generate", then fund it with AR (mainnet) or use the ` +
+      `Arweave wallet keyfile not found. Set ARWEAVE_WALLET_JSON_PATH to a local ` +
+      `keyfile, or ARWEAVE_WALLET_JSON to the raw JWK JSON contents (used on ` +
+      `platforms like Railway). Generate one with "npm run wallet:generate" if ` +
+      `you don't have one yet, then fund it with AR (mainnet) or use the ` +
       `arlocal faucet (local dev) before writing memories.`
     );
   }
