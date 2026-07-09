@@ -119,11 +119,20 @@ if (PAYMENTS_ENFORCED) {
 
   const httpServer = new x402HTTPResourceServer(resourceServer, routes);
 
-  // Only actual tool invocations (tools/call) should be billable.
-  // initialize and tools/list are handshake/discovery — free, or no agent
-  // could ever connect long enough to find out what they'd be paying for.
-  const FREE_MCP_METHODS = new Set(["initialize", "notifications/initialized", "tools/list", "ping"]);
-
+  /**
+   * Only actual tool invocations (tools/call) are billable. Everything
+   * else on /mcp — initialize, notifications/initialized, tools/list,
+   * ping, and any other discovery/capability probe a given MCP client
+   * happens to send (e.g. resources/list, prompts/list) — is free.
+   *
+   * Deny-listing just "tools/call" (rather than allow-listing every
+   * possible non-billable method) is deliberate: an earlier version of
+   * this hook allow-listed a fixed set of methods and broke real MCP
+   * Inspector connections, because Inspector probes additional discovery
+   * methods beyond the four that were allow-listed. Billing intent is
+   * "charge for tool execution" — deny-listing tools/call expresses that
+   * directly and is robust to whatever else a given client sends.
+   */
   httpServer.onProtectedRequest(async (context, routeConfig) => {
     if (context.path !== "/mcp") {
       return; // not the MCP route — normal payment flow applies
@@ -132,13 +141,11 @@ if (PAYMENTS_ENFORCED) {
     const body = context.adapter.getBody();
     const method = body && typeof body === "object" ? body.method : undefined;
 
-    if (method && FREE_MCP_METHODS.has(method)) {
-      return { grantAccess: true };
+    if (method === "tools/call") {
+      return; // the only billable case — falls through to the 402 flow
     }
 
-    // method === "tools/call" (or unrecognized) falls through to the
-    // normal 402 challenge / payment verification flow below.
-    return;
+    return { grantAccess: true };
   });
 
   paymentMiddlewareInstance = paymentMiddlewareFromHTTPServer(httpServer);
