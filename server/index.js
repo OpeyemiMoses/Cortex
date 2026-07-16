@@ -23,7 +23,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "cortex", version: "0.1.0" });
+  res.json({ status: "ok", service: "cortex", version: "0.1.0", updated: "accept-fix-v2" });
 });
 
 const PAYMENTS_ENFORCED = process.env.PAYMENTS_ENFORCED === "true";
