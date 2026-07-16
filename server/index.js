@@ -84,7 +84,8 @@ if (PAYMENTS_ENFORCED) {
         scheme: "exact",
         network: NETWORK,
         payTo: PAY_TO,
-        price: process.env.X402_PRICE_WRITE_MEMORY || "$0.01"
+        price: process.env.X402_PRICE_WRITE_MEMORY || "$0.01",
+        extra: { decimals: 6 }
       }],
       description: "Cortex: write_memory — permanently store an agent memory object",
       mimeType: "application/json"
@@ -94,7 +95,8 @@ if (PAYMENTS_ENFORCED) {
         scheme: "exact",
         network: NETWORK,
         payTo: PAY_TO,
-        price: process.env.X402_PRICE_RECALL_MEMORY || "$0.001"
+        price: process.env.X402_PRICE_RECALL_MEMORY || "$0.001",
+        extra: { decimals: 6 }
       }],
       description: "Cortex: recall_memory — retrieve and verify a stored memory",
       mimeType: "application/json"
@@ -104,7 +106,8 @@ if (PAYMENTS_ENFORCED) {
         scheme: "exact",
         network: NETWORK,
         payTo: PAY_TO,
-        price: process.env.X402_PRICE_QUERY_MEMORY || "$0.005"
+        price: process.env.X402_PRICE_QUERY_MEMORY || "$0.005",
+        extra: { decimals: 6 }
       }],
       description: "Cortex: query_memory — search an agent's memory history",
       mimeType: "application/json"
@@ -114,7 +117,8 @@ if (PAYMENTS_ENFORCED) {
         scheme: "exact",
         network: NETWORK,
         payTo: PAY_TO,
-        price: process.env.X402_PRICE_MCP_CALL || "$0.01"
+        price: process.env.X402_PRICE_MCP_CALL || "$0.01",
+        extra: { decimals: 6 }
       }],
       description: "Cortex: A2MCP tool call — flat rate covering write_memory, recall_memory, query_memory, and get_memory_digest",
       mimeType: "application/json"
