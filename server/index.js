@@ -13,6 +13,15 @@ app.set("trust proxy", true);
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
+// Force Accept header for /mcp requests so MCP transport handles them
+// correctly even if clients (like task-402-pay) do not send standard headers.
+app.use((req, res, next) => {
+  if (req.path === "/mcp") {
+    req.headers["accept"] = "application/json, text/event-stream";
+  }
+  next();
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "cortex", version: "0.1.0" });
 });
