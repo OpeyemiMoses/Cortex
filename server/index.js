@@ -36,6 +36,14 @@ app.use(express.json({ limit: "1mb" }));
 app.use((req, res, next) => {
   if (req.path.includes("mcp")) {
     req.headers["accept"] = "application/json, text/event-stream";
+    if (req.rawHeaders) {
+      const idx = req.rawHeaders.findIndex(h => h.toLowerCase() === "accept");
+      if (idx !== -1) {
+        req.rawHeaders[idx + 1] = "application/json, text/event-stream";
+      } else {
+        req.rawHeaders.push("Accept", "application/json, text/event-stream");
+      }
+    }
   }
   next();
 });
