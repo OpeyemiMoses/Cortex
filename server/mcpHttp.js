@@ -41,8 +41,10 @@ function mountMcp(app, path = "/mcp") {
       });
 
       await server.connect(transport);
+      console.log("[cortex-mcp] req.headers before override:", req.headers);
       // Ensure the request headers satisfy StreamableHTTPServerTransport's requirement
       req.headers["accept"] = "application/json, text/event-stream";
+      console.log("[cortex-mcp] req.headers after override:", req.headers);
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
       console.error("MCP request failed:", err);
