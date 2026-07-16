@@ -1,4 +1,18 @@
 require("dotenv").config();
+const logBuffer = [];
+const originalLog = console.log;
+const originalError = console.error;
+console.log = (...args) => {
+  logBuffer.push("[LOG] " + args.join(" "));
+  if (logBuffer.length > 500) logBuffer.shift();
+  originalLog(...args);
+};
+console.error = (...args) => {
+  logBuffer.push("[ERR] " + args.join(" "));
+  if (logBuffer.length > 500) logBuffer.shift();
+  originalError(...args);
+};
+
 const express = require("express");
 const cors = require("cors");
 
@@ -9,6 +23,10 @@ const app = express();
 // Trust proxy is required to reconstruct the correct https:// protocol
 // in the x402 payment challenges when running behind edge proxies (like Railway)
 app.set("trust proxy", true);
+
+app.get("/logs", (req, res) => {
+  res.type("text/plain").send(logBuffer.join("\n"));
+});
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
