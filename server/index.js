@@ -6,6 +6,10 @@ const memoryRoutes = require("./routes/memory");
 const { mountMcp } = require("./mcpHttp");
 
 const app = express();
+// Trust proxy is required to reconstruct the correct https:// protocol
+// in the x402 payment challenges when running behind edge proxies (like Railway)
+app.set("trust proxy", true);
+
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
