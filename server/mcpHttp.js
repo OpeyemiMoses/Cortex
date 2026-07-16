@@ -41,6 +41,8 @@ function mountMcp(app, path = "/mcp") {
       });
 
       await server.connect(transport);
+      // Ensure the request headers satisfy StreamableHTTPServerTransport's requirement
+      req.headers["accept"] = "application/json, text/event-stream";
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
       console.error("MCP request failed:", err);
