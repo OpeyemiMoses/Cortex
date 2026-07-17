@@ -25,7 +25,7 @@ const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/ser
 const { registerTools } = require("../mcp/tools");
 
 function mountMcp(app, path = "/mcp") {
-  app.post(path, async (req, res) => {
+  app.all(path, async (req, res) => {
     try {
       // Stateless: a fresh server + transport per request. Simplest correct
       // setup for a resource server like this one, which doesn't need to
