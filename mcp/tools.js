@@ -2,9 +2,11 @@ const { z } = require("zod");
 
 const memoryService = require("../server/services/memoryService");
 const { MemoryTypeEnum, VisibilityEnum } = require("../server/schema/memoryObject");
+const auth = require("../server/services/auth/callerAuth");
+const cache = require("../server/services/cache/redisIndex");
 
 /**
- * Registers Cortex's three tools on any MCP server instance, regardless
+ * Registers Cortex's five tools on any MCP server instance, regardless
  * of transport (stdio for local testing, Streamable HTTP for the real
  * public A2MCP endpoint). One definition, two transports — keeps them
  * from drifting apart.
@@ -19,7 +21,9 @@ function registerTools(server) {
       content: z.string().max(50_000),
       metadata: z.record(z.any()).optional(),
       visibility: VisibilityEnum.optional(),
-      tags: z.array(z.string()).optional()
+      tags: z.array(z.string()).optional(),
+      auth_signature: z.string().optional().describe("EVM wallet signature (required if CALLER_AUTH_ENFORCED=true)"),
+      auth_timestamp: z.union([z.string(), z.number()]).optional().describe("Unix millisecond timestamp used in signature (required if CALLER_AUTH_ENFORCED=true)")
     },
     async (args) => {
       try {
@@ -36,11 +40,13 @@ function registerTools(server) {
     "Retrieve a previously written memory object by its id, with on-chain verification that it hasn't been tampered with.",
     {
       id: z.string().describe("The memory's content-hash id, returned by write_memory"),
-      cid: z.string().optional().describe("Optional IPFS CID for a faster lookup path")
+      cid: z.string().optional().describe("Optional IPFS CID for a faster lookup path"),
+      auth_signature: z.string().optional().describe("EVM wallet signature (required for private memory)"),
+      auth_timestamp: z.union([z.string(), z.number()]).optional().describe("Unix millisecond timestamp used in signature (required for private memory)")
     },
-    async ({ id, cid }) => {
+    async ({ id, cid, auth_signature, auth_timestamp }) => {
       try {
-        const result = await memoryService.recallMemory(id, { cid });
+        const result = await memoryService.recallMemory(id, { cid, auth_signature, auth_timestamp });
         if (!result) {
           return { content: [{ type: "text", text: "Memory not found" }], isError: true };
         }
@@ -53,15 +59,28 @@ function registerTools(server) {
 
   server.tool(
     "query_memory",
-    "Query an agent's memory history, optionally filtered by type.",
+    "Query an agent's memory history, optionally filtered by type, date-range, and paginated.",
     {
       agent_id: z.string(),
       type: MemoryTypeEnum.optional(),
-      limit: z.number().optional()
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+      from: z.string().optional().describe("ISO date string, start of date filter range"),
+      to: z.string().optional().describe("ISO date string, end of date filter range"),
+      auth_signature: z.string().optional().describe("EVM wallet signature (required if CALLER_AUTH_ENFORCED=true or if fetching private memory)"),
+      auth_timestamp: z.union([z.string(), z.number()]).optional().describe("Unix millisecond timestamp used in signature")
     },
-    async ({ agent_id, type, limit }) => {
+    async ({ agent_id, type, limit, offset, from, to, auth_signature, auth_timestamp }) => {
       try {
-        const results = await memoryService.queryMemory(agent_id, { type, limit });
+        const results = await memoryService.queryMemory(agent_id, {
+          type,
+          limit,
+          offset,
+          from,
+          to,
+          auth_signature,
+          auth_timestamp
+        });
         return { content: [{ type: "text", text: JSON.stringify({ results, count: results.length }) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
@@ -75,15 +94,36 @@ function registerTools(server) {
     {
       agent_id: z.string(),
       from: z.string().optional().describe("ISO date string, defaults to the beginning of history"),
-      to: z.string().optional().describe("ISO date string, defaults to now")
+      to: z.string().optional().describe("ISO date string, defaults to now"),
+      auth_signature: z.string().optional().describe("EVM wallet signature (required if CALLER_AUTH_ENFORCED=true)"),
+      auth_timestamp: z.union([z.string(), z.number()]).optional().describe("Unix millisecond timestamp used in signature (required if CALLER_AUTH_ENFORCED=true)")
     },
-    async ({ agent_id, from, to }) => {
+    async ({ agent_id, from, to, auth_signature, auth_timestamp }) => {
       try {
-        const digest = await memoryService.generateDigest(agent_id, { from, to });
+        const digest = await memoryService.generateDigest(agent_id, { from, to, auth_signature, auth_timestamp });
         if (!digest) {
           return { content: [{ type: "text", text: "No memories found in that range to summarize" }], isError: true };
         }
         return { content: [{ type: "text", text: JSON.stringify(digest) }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "list_my_agents",
+    "List all namespaced agent IDs claimed/owned by your EVM wallet.",
+    {
+      auth_signature: z.string().describe("EVM wallet signature for list_my_agents"),
+      auth_timestamp: z.union([z.string(), z.number()]).describe("Unix millisecond timestamp used in signature")
+    },
+    async ({ auth_signature, auth_timestamp }) => {
+      try {
+        const message = auth.buildListAgentsMessage(auth_timestamp);
+        const recoveredWallet = auth.verifySignature(message, auth_signature, auth_timestamp);
+        const agents = await cache.getAgentsByWallet(recoveredWallet);
+        return { content: [{ type: "text", text: JSON.stringify({ agents }) }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
       }

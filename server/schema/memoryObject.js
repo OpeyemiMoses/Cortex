@@ -36,7 +36,9 @@ const MemoryObjectInput = z.object({
   prior_hash: z.string().optional().nullable(),
   visibility: VisibilityEnum.optional().default("private"),
   embedding: z.array(z.number()).optional(),
-  tags: z.array(z.string()).optional().default([])
+  tags: z.array(z.string()).optional().default([]),
+  auth_signature: z.string().optional(),
+  auth_timestamp: z.union([z.string(), z.number()]).optional()
 });
 
 // Shape of a memory object once it has been written and anchored.

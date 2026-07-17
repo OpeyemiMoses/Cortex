@@ -13,6 +13,7 @@ let connecting = null;
 
 const _memIndex = new Map(); // agent_id -> [ids]
 const _memCache = new Map(); // id -> { value, expiresAt }
+const _memWalletAgents = new Map(); // wallet -> Set(agent_ids)
 
 async function getClient() {
   if (!process.env.REDIS_URL) return null;
@@ -74,4 +75,34 @@ async function cacheGet(id) {
   return entry.value;
 }
 
-module.exports = { addToIndex, getIndex, cacheSet, cacheGet };
+async function addAgentToWallet(wallet, agentId) {
+  const client = await getClient();
+  const key = `agents:${wallet.toLowerCase()}`;
+  if (client) {
+    await client.sAdd(key, agentId);
+    return;
+  }
+  if (!_memWalletAgents.has(wallet.toLowerCase())) {
+    _memWalletAgents.set(wallet.toLowerCase(), new Set());
+  }
+  _memWalletAgents.get(wallet.toLowerCase()).add(agentId);
+}
+
+async function getAgentsByWallet(wallet) {
+  const client = await getClient();
+  const key = `agents:${wallet.toLowerCase()}`;
+  if (client) {
+    return client.sMembers(key);
+  }
+  const set = _memWalletAgents.get(wallet.toLowerCase());
+  return set ? Array.from(set) : [];
+}
+
+module.exports = {
+  addToIndex,
+  getIndex,
+  cacheSet,
+  cacheGet,
+  addAgentToWallet,
+  getAgentsByWallet
+};
