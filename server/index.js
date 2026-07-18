@@ -54,176 +54,121 @@ app.get("/health", (req, res) => {
 
 const PAYMENTS_ENFORCED = process.env.PAYMENTS_ENFORCED === "true" || (process.env.PAYMENTS_ENFORCED !== "false" && !!process.env.PAY_TO_ADDRESS && !!process.env.OKX_API_KEY);
 
-/**
- * The MCP endpoint (A2MCP target) is GATED by the same x402 payment
- * middleware as the REST routes below, at a flat rate for all tool calls.
- *
- * Per OKX's Agent Payments Protocol whitepaper: when an agent hits a
- * priced endpoint (including via A2MCP), the SELLER'S OWN SERVER returns
- * the 402 challenge — OKX.AI's marketplace does not intercept or meter
- * this separately. So /mcp must be gated directly, same as any other
- * priced route.
- *
- * IMPORTANT: MCP's Streamable HTTP transport uses a single POST /mcp for
- * EVERYTHING — the initial handshake (`initialize`), tool discovery
- * (`tools/list`), AND actual tool invocations (`tools/call`). Gating the
- * whole route blindly (an earlier version of this file did this) blocks
- * the handshake itself — an agent can't even discover what tools exist
- * without paying first, which breaks MCP Inspector and would break every
- * real agent trying to connect via OKX.AI.
- *
- * Fix: use the SDK's `onProtectedRequest` hook (on x402HTTPResourceServer,
- * via `paymentMiddlewareFromHTTPServer` — a lower-level entry point than
- * the docs' quickstart `paymentMiddleware`, found in the SDK's own type
- * definitions/JSDoc, not the public docs site) to inspect the parsed
- * JSON-RPC body and grant free access to `initialize` and `tools/list`,
- * while leaving `tools/call` (the only requests that do billable work)
- * subject to the normal 402 challenge.
- *
- * NOTE: this is still a FLAT rate across all 4 MCP tools (write/recall/
- * query/digest) once a tools/call request does require payment — true
- * per-tool pricing on /mcp would need per-request dynamic pricing, which
- * the SDK doesn't expose a documented hook for. Flat rate was chosen
- * deliberately for hackathon timeline safety.
- */
-let paymentMiddlewareInstance = null;
+let realPaymentMw = null;
 
-if (PAYMENTS_ENFORCED) {
-  const {
-    paymentMiddlewareFromHTTPServer,
-    x402ResourceServer,
-    x402HTTPResourceServer
-  } = require("@okxweb3/x402-express");
-  const { ExactEvmScheme } = require("@okxweb3/x402-evm/exact/server");
-  const { OKXFacilitatorClient } = require("@okxweb3/x402-core");
-
-  const NETWORK = process.env.X402_NETWORK || "eip155:1952"; // X Layer testnet by default
-  const PAY_TO = process.env.PAY_TO_ADDRESS;
-
-  if (!PAY_TO) {
-    throw new Error("PAY_TO_ADDRESS is required when PAYMENTS_ENFORCED=true.");
+async function getPaymentMiddleware() {
+  if (!PAYMENTS_ENFORCED) {
+    console.log("Cortex: PAYMENTS_ENFORCED=false — all requests pass through unpaid.");
+    return (req, res, next) => next();
   }
 
-  const facilitatorClient = new OKXFacilitatorClient({
-    apiKey: process.env.OKX_API_KEY,
-    secretKey: process.env.OKX_SECRET_KEY,
-    passphrase: process.env.OKX_PASSPHRASE
-  });
+  const PAY_TO = process.env.PAY_TO_ADDRESS;
+  if (!PAY_TO) {
+    console.warn("[x402] PAY_TO_ADDRESS is missing — falling back to unpaywalled routes.");
+    return (req, res, next) => next();
+  }
 
-  const resourceServer = new x402ResourceServer(facilitatorClient);
-  resourceServer.register(NETWORK, new ExactEvmScheme());
+  if (!process.env.OKX_API_KEY || !process.env.OKX_SECRET_KEY || !process.env.OKX_PASSPHRASE) {
+    console.warn("[x402] OKX credentials missing — falling back to unpaywalled routes.");
+    return (req, res, next) => next();
+  }
 
-  const routes = {
-    "POST /memory/write": {
-      accepts: [{
-        scheme: "exact",
-        network: NETWORK,
-        payTo: PAY_TO,
-        price: process.env.X402_PRICE_WRITE_MEMORY || "$0.3",
-        extra: { decimals: 6 }
-      }],
-      description: "Cortex: write_memory — permanently store an agent memory object",
-      mimeType: "application/json"
-    },
-    "GET /memory/recall/:id": {
-      accepts: [{
-        scheme: "exact",
-        network: NETWORK,
-        payTo: PAY_TO,
-        price: process.env.X402_PRICE_RECALL_MEMORY || "$0.3",
-        extra: { decimals: 6 }
-      }],
-      description: "Cortex: recall_memory — retrieve and verify a stored memory",
-      mimeType: "application/json"
-    },
-    "GET /memory/query": {
-      accepts: [{
-        scheme: "exact",
-        network: NETWORK,
-        payTo: PAY_TO,
-        price: process.env.X402_PRICE_QUERY_MEMORY || "$0.3",
-        extra: { decimals: 6 }
-      }],
-      description: "Cortex: query_memory — search an agent's memory history",
-      mimeType: "application/json"
-    },
-    "GET /mcp": {
-      accepts: [{
-        scheme: "exact",
-        network: NETWORK,
-        payTo: PAY_TO,
-        price: process.env.X402_PRICE_MCP_CALL || "$0.3",
-        extra: { decimals: 6 }
-      }],
-      description: "Cortex: A2MCP check",
-      mimeType: "application/json"
-    },
-    "POST /mcp": {
-      accepts: [{
-        scheme: "exact",
-        network: NETWORK,
-        payTo: PAY_TO,
-        price: process.env.X402_PRICE_MCP_CALL || "$0.3",
-        extra: { decimals: 6 }
-      }],
-      description: "Cortex: A2MCP tool call — flat rate covering write_memory, recall_memory, query_memory, and get_memory_digest",
-      mimeType: "application/json"
-    }
-  };
+  try {
+    const { paymentMiddleware, x402ResourceServer } = require("@okxweb3/x402-express");
+    const { ExactEvmScheme } = require("@okxweb3/x402-evm/exact/server");
+    const { OKXFacilitatorClient } = require("@okxweb3/x402-core");
 
-  const httpServer = new x402HTTPResourceServer(resourceServer, routes);
+    const NETWORK = process.env.X402_NETWORK || "eip155:1952"; // X Layer Testnet by default
 
-  /**
-   * Only actual tool invocations (tools/call) are billable. Everything
-   * else on /mcp — initialize, notifications/initialized, tools/list,
-   * ping, and any other discovery/capability probe a given MCP client
-   * happens to send (e.g. resources/list, prompts/list) — is free.
-   *
-   * Deny-listing just "tools/call" (rather than allow-listing every
-   * possible non-billable method) is deliberate: an earlier version of
-   * this hook allow-listed a fixed set of methods and broke real MCP
-   * Inspector connections, because Inspector probes additional discovery
-   * methods beyond the four that were allow-listed. Billing intent is
-   * "charge for tool execution" — deny-listing tools/call expresses that
-   * directly and is robust to whatever else a given client sends.
-   */
-  httpServer.onProtectedRequest(async (context, routeConfig) => {
-    if (context.path !== "/mcp") {
-      return; // not the MCP route — normal payment flow applies
-    }
+    const facilitatorClient = new OKXFacilitatorClient({
+      apiKey: process.env.OKX_API_KEY,
+      secretKey: process.env.OKX_SECRET_KEY,
+      passphrase: process.env.OKX_PASSPHRASE
+    });
 
-    const body = context.adapter.getBody();
-    const method = body && typeof body === "object" ? body.method : undefined;
+    const resourceServer = new x402ResourceServer(facilitatorClient);
+    resourceServer.register(NETWORK, new ExactEvmScheme());
 
-    console.log("[onProtectedRequest] context keys:", Object.keys(context));
-    console.log("[onProtectedRequest] body:", body);
-    console.log("[onProtectedRequest] method:", method);
+    // Validate credentials/connectivity BEFORE handing back working middleware
+    await resourceServer.initialize();
 
-    const freeMethods = [
-      "initialize",
-      "tools/list",
-      "ping",
-      "resources/list",
-      "prompts/list",
-      "notifications/initialized"
-    ];
+    console.log(`[x402] Payments ENABLED on network ${NETWORK}, paying to ${PAY_TO}`);
 
-    if (method && freeMethods.includes(method)) {
-      console.log("[onProtectedRequest] Free method allowed:", method);
-      return { grantAccess: true };
-    }
+    const MCP_ACCEPTS = [{
+      scheme: "exact",
+      network: NETWORK,
+      payTo: PAY_TO,
+      price: process.env.X402_PRICE_MCP_CALL || "$0.3",
+      extra: { decimals: 6 }
+    }];
 
-    console.log("[onProtectedRequest] Payment challenge required for method:", method);
-    return; // falls through to 402 Payment Required
-  });
-
-  paymentMiddlewareInstance = paymentMiddlewareFromHTTPServer(httpServer);
-  app.use(paymentMiddlewareInstance);
-
-  console.log(`Cortex: x402 payments ENFORCED via OKX Onchain OS SDK on ${NETWORK} (including /mcp tools/call; initialize/tools/list are free)`);
-} else {
-  console.log("Cortex: PAYMENTS_ENFORCED=false — all requests pass through unpaid.");
+    return paymentMiddleware(
+      {
+        "POST /memory/write": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: process.env.X402_PRICE_WRITE_MEMORY || "$0.01",
+            extra: { decimals: 6 }
+          }],
+          description: "Cortex: write_memory — permanently store an agent memory object",
+          mimeType: "application/json"
+        },
+        "GET /memory/recall/:id": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: process.env.X402_PRICE_RECALL_MEMORY || "$0.001",
+            extra: { decimals: 6 }
+          }],
+          description: "Cortex: recall_memory — retrieve and verify a stored memory",
+          mimeType: "application/json"
+        },
+        "GET /memory/query": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: process.env.X402_PRICE_QUERY_MEMORY || "$0.005",
+            extra: { decimals: 6 }
+          }],
+          description: "Cortex: query_memory — search an agent's memory history",
+          mimeType: "application/json"
+        },
+        "POST /mcp": {
+          accepts: MCP_ACCEPTS,
+          description: "Cortex Multi-Agent Memory & Digest MCP server",
+          mimeType: "application/json"
+        },
+        "GET /mcp": {
+          accepts: MCP_ACCEPTS,
+          description: "Cortex Multi-Agent Memory & Digest MCP server",
+          mimeType: "application/json"
+        }
+      },
+      resourceServer
+    );
+  } catch (err) {
+    console.error(`[x402] Failed to initialize payment facilitator (${err.message}) — falling back to unpaywalled routes.`);
+    return (req, res, next) => next();
+  }
 }
+
+const paymentMwReady = getPaymentMiddleware()
+  .then((mw) => {
+    realPaymentMw = mw;
+  })
+  .catch((err) => {
+    console.error("[x402] Failed to initialize payment middleware:", err.message);
+    realPaymentMw = (req, res, next) => next();
+  });
+
+app.use((req, res, next) => {
+  if (realPaymentMw) return realPaymentMw(req, res, next);
+  paymentMwReady.then(() => realPaymentMw(req, res, next)).catch(next);
+});
 
 /**
  * mountMcp is called AFTER the payment middleware is registered above, so
