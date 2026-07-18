@@ -184,11 +184,20 @@ if (PAYMENTS_ENFORCED) {
     const body = context.adapter.getBody();
     const method = body && typeof body === "object" ? body.method : undefined;
 
-    if (method === "tools/call") {
-      return; // the only billable case — falls through to the 402 flow
+    const freeMethods = [
+      "initialize",
+      "tools/list",
+      "ping",
+      "resources/list",
+      "prompts/list",
+      "notifications/initialized"
+    ];
+
+    if (method && freeMethods.includes(method)) {
+      return { grantAccess: true };
     }
 
-    return { grantAccess: true };
+    return; // falls through to 402 Payment Required
   });
 
   paymentMiddlewareInstance = paymentMiddlewareFromHTTPServer(httpServer);
