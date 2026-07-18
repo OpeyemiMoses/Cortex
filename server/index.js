@@ -109,7 +109,7 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_WRITE_MEMORY || "$0.01",
+            price: process.env.X402_PRICE_WRITE_MEMORY || "$0.3",
             extra: { decimals: 6 }
           }],
           description: "Cortex: write_memory — permanently store an agent memory object",
@@ -120,7 +120,7 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_RECALL_MEMORY || "$0.001",
+            price: process.env.X402_PRICE_RECALL_MEMORY || "$0.3",
             extra: { decimals: 6 }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
@@ -131,10 +131,21 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_QUERY_MEMORY || "$0.005",
+            price: process.env.X402_PRICE_QUERY_MEMORY || "$0.3",
             extra: { decimals: 6 }
           }],
           description: "Cortex: query_memory — search an agent's memory history",
+          mimeType: "application/json"
+        },
+        "GET /memory/digest": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: process.env.X402_PRICE_DIGEST || "$0.3",
+            extra: { decimals: 6 }
+          }],
+          description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
           mimeType: "application/json"
         },
         "POST /mcp": {
