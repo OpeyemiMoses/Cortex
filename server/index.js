@@ -148,6 +148,17 @@ async function getPaymentMiddleware() {
           description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
           mimeType: "application/json"
         },
+        "GET /memory/my-agents": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: "$0.3",
+            extra: { decimals: 6 }
+          }],
+          description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by your EVM wallet",
+          mimeType: "application/json"
+        },
         "POST /mcp": {
           accepts: MCP_ACCEPTS,
           description: "Cortex Multi-Agent Memory & Digest MCP server",
