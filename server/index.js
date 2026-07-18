@@ -147,6 +147,17 @@ if (PAYMENTS_ENFORCED) {
       description: "Cortex: query_memory — search an agent's memory history",
       mimeType: "application/json"
     },
+    "GET /mcp": {
+      accepts: [{
+        scheme: "exact",
+        network: NETWORK,
+        payTo: PAY_TO,
+        price: process.env.X402_PRICE_MCP_CALL || "$0.3",
+        extra: { decimals: 6 }
+      }],
+      description: "Cortex: A2MCP check",
+      mimeType: "application/json"
+    },
     "POST /mcp": {
       accepts: [{
         scheme: "exact",
