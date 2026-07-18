@@ -184,6 +184,10 @@ if (PAYMENTS_ENFORCED) {
     const body = context.adapter.getBody();
     const method = body && typeof body === "object" ? body.method : undefined;
 
+    console.log("[onProtectedRequest] context keys:", Object.keys(context));
+    console.log("[onProtectedRequest] body:", body);
+    console.log("[onProtectedRequest] method:", method);
+
     const freeMethods = [
       "initialize",
       "tools/list",
@@ -194,9 +198,11 @@ if (PAYMENTS_ENFORCED) {
     ];
 
     if (method && freeMethods.includes(method)) {
+      console.log("[onProtectedRequest] Free method allowed:", method);
       return { grantAccess: true };
     }
 
+    console.log("[onProtectedRequest] Payment challenge required for method:", method);
     return; // falls through to 402 Payment Required
   });
 
