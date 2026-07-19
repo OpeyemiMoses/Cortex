@@ -42,9 +42,9 @@ const WRITE_ALIASES = {
 const RECALL_ALIASES = { id: ["memoryId"], cid: ["ipfsCid"] };
 const AUTH_ALIASES = { auth_signature: ["authSignature"], auth_timestamp: ["authTimestamp"] };
 
-router.post("/write", async (req, res) => {
+async function handleWrite(params, res) {
   try {
-    const record = await memoryService.writeMemory(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }));
+    const record = await memoryService.writeMemory(params);
     res.status(201).json({ memory: record });
   } catch (err) {
     if (err.statusCode === 400) {
@@ -56,18 +56,26 @@ router.post("/write", async (req, res) => {
     console.error("write_memory failed:", err);
     res.status(500).json({ error: "Failed to write memory" });
   }
-});
+}
 
-// GET fallback — write is a mutation and can't execute from a bare GET, but
-// the marketplace's x402 reachability pre-check (x402-validate) probes with
-// a plain GET before ever attempting the real paid POST. Without this, that
-// pre-check 404s and the whole designated-task flow is refused before it
-// gets anywhere near payment.
+router.post("/write", (req, res) => handleWrite(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }), res));
+
+// GET fallback — the marketplace's x402 reachability pre-check
+// (x402-validate) probes with a plain GET before ever attempting the real
+// paid request, and its actual paid replay (task-402-pay) then reuses
+// whichever method passed that pre-check — sending the real params as a
+// query string, not a JSON body. So a bare GET (no params) must still look
+// like a valid x402 service, but a GET carrying the real fields must
+// actually perform the write — otherwise the paid replay pays for nothing.
 router.get("/write", (req, res) => {
-  res.json({
-    service: "cortex-write-memory",
-    info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required."
-  });
+  const params = normalize(req.query, { ...WRITE_ALIASES, ...AUTH_ALIASES });
+  if (!params.agent_id && !params.type && !params.content) {
+    return res.json({
+      service: "cortex-write-memory",
+      info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required."
+    });
+  }
+  return handleWrite(params, res);
 });
 
 async function handleRecall(id, params, res) {
@@ -96,14 +104,19 @@ router.post("/recall", (req, res) => {
   return handleRecall(id, body, res);
 });
 
-// Bare GET fallback (no :id) — same reachability-probe reasoning as
-// GET /write above: x402-validate's plain GET has nothing to recall by, so
-// this just confirms the endpoint is a real x402 service.
+// Bare GET fallback (no :id) — same reasoning as GET /write above: a probe
+// with no id must still look like a valid x402 service, but the paid
+// replay may arrive here with ?id=... in the query string and must
+// actually perform the recall.
 router.get("/recall", (req, res) => {
-  res.json({
-    service: "cortex-recall-memory",
-    info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required."
-  });
+  const params = normalize(req.query, { ...RECALL_ALIASES, ...AUTH_ALIASES });
+  if (!params.id) {
+    return res.json({
+      service: "cortex-recall-memory",
+      info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required."
+    });
+  }
+  return handleRecall(params.id, params, res);
 });
 
 async function handleQuery(params, res) {
