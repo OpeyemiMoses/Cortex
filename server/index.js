@@ -163,27 +163,17 @@ async function getPaymentMiddleware() {
 
     console.log(`[x402] Payments ENABLED on network ${NETWORK}, paying to ${PAY_TO}`);
 
-    /**
-     * Converts a price string to raw base units (6 decimals for USD₮0).
-     * Supports both dollar-sign notation ("$0.3" → "300000") and plain base
-     * unit strings ("300000" → "300000"). Falls back to 0.3 USDT if unset.
-     */
-    function parsePrice(envVal, defaultBaseUnits = "300000") {
-      if (!envVal) return defaultBaseUnits;
-      const s = envVal.trim();
-      if (s.startsWith("$")) {
-        const dollars = parseFloat(s.slice(1));
-        if (!isNaN(dollars)) return String(Math.round(dollars * 1_000_000));
-      }
-      return s; // already raw base units
-    }
-
-    const PRICE_WRITE   = parsePrice(process.env.X402_PRICE_WRITE_MEMORY);
-    const PRICE_RECALL  = parsePrice(process.env.X402_PRICE_RECALL_MEMORY);
-    const PRICE_QUERY   = parsePrice(process.env.X402_PRICE_QUERY_MEMORY);
-    const PRICE_DIGEST  = parsePrice(process.env.X402_PRICE_DIGEST);
-    const PRICE_AGENTS  = parsePrice(process.env.X402_PRICE_MY_AGENTS);
-    const PRICE_MCP     = parsePrice(process.env.X402_PRICE_MCP_CALL);
+    // Hardcoded to $0.3 (300000 base units, 6 decimals for USD₮0) for every
+    // route. Previously configurable via X402_PRICE_* env vars, but those
+    // drifted out of sync with the intended price on Railway — fixing the
+    // value in code removes that failure mode entirely.
+    const PRICE_ALL = "300000";
+    const PRICE_WRITE   = PRICE_ALL;
+    const PRICE_RECALL  = PRICE_ALL;
+    const PRICE_QUERY   = PRICE_ALL;
+    const PRICE_DIGEST  = PRICE_ALL;
+    const PRICE_AGENTS  = PRICE_ALL;
+    const PRICE_MCP     = PRICE_ALL;
 
     console.log(`[x402] Resolved prices (base units) — write:${PRICE_WRITE} recall:${PRICE_RECALL} query:${PRICE_QUERY} digest:${PRICE_DIGEST} agents:${PRICE_AGENTS} mcp:${PRICE_MCP}`);
 
