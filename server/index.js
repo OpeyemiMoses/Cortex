@@ -163,12 +163,17 @@ async function getPaymentMiddleware() {
 
     console.log(`[x402] Payments ENABLED on network ${NETWORK}, paying to ${PAY_TO}`);
 
+    // 300000 = 0.3 USD₮0 in raw base units (6 decimals). Always expressed as
+    // raw base-unit strings — never dollar-sign notation — to avoid middleware
+    // conversion ambiguity.
+    const PRICE_DEFAULT = "300000";
+
     const MCP_ACCEPTS = [{
       scheme: "exact",
       network: NETWORK,
       payTo: PAY_TO,
-      price: process.env.X402_PRICE_MCP_CALL || "$0.3",
-      extra: { name: "USD₮0", version: "1" }
+      price: process.env.X402_PRICE_MCP_CALL || PRICE_DEFAULT,
+      extra: { name: "USD\u20ae0", version: "1" }
     }];
 
     return paymentMiddleware(
@@ -178,8 +183,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_WRITE_MEMORY || "$0.3",
-            extra: { name: "USD₮0", version: "1" }
+            price: process.env.X402_PRICE_WRITE_MEMORY || PRICE_DEFAULT,
+            extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: write_memory — permanently store an agent memory object",
           mimeType: "application/json"
@@ -189,8 +194,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_RECALL_MEMORY || "$0.3",
-            extra: { name: "USD₮0", version: "1" }
+            price: process.env.X402_PRICE_RECALL_MEMORY || PRICE_DEFAULT,
+            extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
           mimeType: "application/json"
@@ -200,8 +205,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_QUERY_MEMORY || "$0.3",
-            extra: { name: "USD₮0", version: "1" }
+            price: process.env.X402_PRICE_QUERY_MEMORY || PRICE_DEFAULT,
+            extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: query_memory — search an agent's memory history",
           mimeType: "application/json"
@@ -211,8 +216,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_DIGEST || "$0.3",
-            extra: { name: "USD₮0", version: "1" }
+            price: process.env.X402_PRICE_DIGEST || PRICE_DEFAULT,
+            extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
           mimeType: "application/json"
@@ -222,8 +227,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: process.env.X402_PRICE_MY_AGENTS || "$0.3",
-            extra: { name: "USD₮0", version: "1" }
+            price: process.env.X402_PRICE_MY_AGENTS || PRICE_DEFAULT,
+            extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by your EVM wallet",
           mimeType: "application/json"
@@ -295,3 +300,13 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Cortex listening on port ${PORT}`);
 });
+
+// ─── A2A provider daemon ──────────────────────────────────────────────────────
+// Starts the XMTP watch loop so Agent #4961 can receive marketplace tasks.
+// Only active when OKX_A2A_AGENT_ID is set (i.e. on Railway, not local dev).
+if (process.env.OKX_A2A_AGENT_ID) {
+  const { startA2AWorker } = require("./a2aWorker");
+  startA2AWorker();
+} else {
+  console.log("[a2aWorker] OKX_A2A_AGENT_ID not set — A2A daemon disabled (local dev mode).");
+}
