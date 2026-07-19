@@ -11,9 +11,40 @@ const auth = require("../services/auth/callerAuth");
  * unpaid requests before they ever reach these handlers.
  */
 
+/**
+ * The marketplace's automatic x402 replay builds its request body from the
+ * human-readable serviceParams text (e.g. "agent ID" -> agentId, "memory
+ * type" -> memoryType), which doesn't match this API's snake_case wire
+ * format. Accept the camelCase alias alongside the canonical key so a
+ * designated-task replay doesn't bounce on field naming alone.
+ */
+function normalize(params, aliasMap) {
+  const out = { ...params };
+  for (const [canonical, aliases] of Object.entries(aliasMap)) {
+    if (out[canonical] === undefined) {
+      for (const alias of aliases) {
+        if (out[alias] !== undefined) {
+          out[canonical] = out[alias];
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+const AGENT_ID_ALIASES = { agent_id: ["agentId"] };
+const WRITE_ALIASES = {
+  agent_id: ["agentId"],
+  type: ["memoryType"],
+  content: ["memoryContent"]
+};
+const RECALL_ALIASES = { id: ["memoryId"], cid: ["ipfsCid"] };
+const AUTH_ALIASES = { auth_signature: ["authSignature"], auth_timestamp: ["authTimestamp"] };
+
 router.post("/write", async (req, res) => {
   try {
-    const record = await memoryService.writeMemory(req.body);
+    const record = await memoryService.writeMemory(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }));
     res.status(201).json({ memory: record });
   } catch (err) {
     if (err.statusCode === 400) {
@@ -42,14 +73,15 @@ async function handleRecall(id, params, res) {
   }
 }
 
-router.get("/recall/:id", (req, res) => handleRecall(req.params.id, req.query, res));
+router.get("/recall/:id", (req, res) => handleRecall(req.params.id, normalize(req.query, AUTH_ALIASES), res));
 
 // POST variant — lets an x402-gated marketplace replay (which sends a JSON
 // body, not a path param or query string) call this service directly.
 router.post("/recall", (req, res) => {
-  const { id } = req.body;
+  const body = normalize(req.body, { ...RECALL_ALIASES, ...AUTH_ALIASES });
+  const { id } = body;
   if (!id) return res.status(400).json({ error: "id is required" });
-  return handleRecall(id, req.body, res);
+  return handleRecall(id, body, res);
 });
 
 async function handleQuery(params, res) {
@@ -76,8 +108,8 @@ async function handleQuery(params, res) {
   }
 }
 
-router.get("/query", (req, res) => handleQuery(req.query, res));
-router.post("/query", (req, res) => handleQuery(req.body, res));
+router.get("/query", (req, res) => handleQuery(normalize(req.query, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
+router.post("/query", (req, res) => handleQuery(normalize(req.body, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
 
 /**
  * /memory/digest?agent_id=...&from=...&to=... (GET) or the same fields
@@ -100,8 +132,8 @@ async function handleDigest(params, res) {
   }
 }
 
-router.get("/digest", (req, res) => handleDigest(req.query, res));
-router.post("/digest", (req, res) => handleDigest(req.body, res));
+router.get("/digest", (req, res) => handleDigest(normalize(req.query, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
+router.post("/digest", (req, res) => handleDigest(normalize(req.body, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
 
 async function handleMyAgents(params, res) {
   const { auth_signature, auth_timestamp } = params;
@@ -123,7 +155,7 @@ async function handleMyAgents(params, res) {
   }
 }
 
-router.get("/my-agents", (req, res) => handleMyAgents(req.query, res));
-router.post("/my-agents", (req, res) => handleMyAgents(req.body, res));
+router.get("/my-agents", (req, res) => handleMyAgents(normalize(req.query, AUTH_ALIASES), res));
+router.post("/my-agents", (req, res) => handleMyAgents(normalize(req.body, AUTH_ALIASES), res));
 
 module.exports = router;
