@@ -27,14 +27,10 @@ router.post("/write", async (req, res) => {
   }
 });
 
-router.get("/recall/:id", async (req, res) => {
+async function handleRecall(id, params, res) {
   try {
-    const { cid, auth_signature, auth_timestamp } = req.query;
-    const result = await memoryService.recallMemory(req.params.id, {
-      cid,
-      auth_signature,
-      auth_timestamp
-    });
+    const { cid, auth_signature, auth_timestamp } = params;
+    const result = await memoryService.recallMemory(id, { cid, auth_signature, auth_timestamp });
     if (!result) return res.status(404).json({ error: "Memory not found" });
     res.json(result);
   } catch (err) {
@@ -44,10 +40,20 @@ router.get("/recall/:id", async (req, res) => {
     console.error("recall_memory failed:", err);
     res.status(500).json({ error: "Failed to recall memory" });
   }
+}
+
+router.get("/recall/:id", (req, res) => handleRecall(req.params.id, req.query, res));
+
+// POST variant — lets an x402-gated marketplace replay (which sends a JSON
+// body, not a path param or query string) call this service directly.
+router.post("/recall", (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: "id is required" });
+  return handleRecall(id, req.body, res);
 });
 
-router.get("/query", async (req, res) => {
-  const { agent_id, type, limit, offset, from, to, auth_signature, auth_timestamp } = req.query;
+async function handleQuery(params, res) {
+  const { agent_id, type, limit, offset, from, to, auth_signature, auth_timestamp } = params;
   if (!agent_id) return res.status(400).json({ error: "agent_id is required" });
 
   try {
@@ -68,22 +74,21 @@ router.get("/query", async (req, res) => {
     console.error("query_memory failed:", err);
     res.status(500).json({ error: "Failed to query memory" });
   }
-});
+}
+
+router.get("/query", (req, res) => handleQuery(req.query, res));
+router.post("/query", (req, res) => handleQuery(req.body, res));
 
 /**
- * GET /memory/digest?agent_id=...&from=...&to=...
+ * /memory/digest?agent_id=...&from=...&to=... (GET) or the same fields
+ * as a JSON body (POST).
  */
-router.get("/digest", async (req, res) => {
-  const { agent_id, from, to, auth_signature, auth_timestamp } = req.query;
+async function handleDigest(params, res) {
+  const { agent_id, from, to, auth_signature, auth_timestamp } = params;
   if (!agent_id) return res.status(400).json({ error: "agent_id is required" });
 
   try {
-    const digest = await memoryService.generateDigest(agent_id, {
-      from,
-      to,
-      auth_signature,
-      auth_timestamp
-    });
+    const digest = await memoryService.generateDigest(agent_id, { from, to, auth_signature, auth_timestamp });
     if (!digest) return res.status(404).json({ error: "No memories found in that range to summarize" });
     res.json({ digest });
   } catch (err) {
@@ -93,13 +98,13 @@ router.get("/digest", async (req, res) => {
     console.error("get_memory_digest failed:", err);
     res.status(500).json({ error: "Failed to generate digest" });
   }
-});
+}
 
-/**
- * GET /memory/my-agents
- */
-router.get("/my-agents", async (req, res) => {
-  const { auth_signature, auth_timestamp } = req.query;
+router.get("/digest", (req, res) => handleDigest(req.query, res));
+router.post("/digest", (req, res) => handleDigest(req.body, res));
+
+async function handleMyAgents(params, res) {
+  const { auth_signature, auth_timestamp } = params;
   if (!auth_signature || !auth_timestamp) {
     return res.status(401).json({ error: "auth_signature and auth_timestamp are required." });
   }
@@ -116,6 +121,9 @@ router.get("/my-agents", async (req, res) => {
     console.error("my-agents failed:", err);
     res.status(500).json({ error: "Failed to list owned agents" });
   }
-});
+}
+
+router.get("/my-agents", (req, res) => handleMyAgents(req.query, res));
+router.post("/my-agents", (req, res) => handleMyAgents(req.body, res));
 
 module.exports = router;

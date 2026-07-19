@@ -201,6 +201,17 @@ async function getPaymentMiddleware() {
           description: "Cortex: write_memory — permanently store an agent memory object",
           mimeType: "application/json"
         },
+        "POST /memory/recall": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: PRICE_RECALL,
+            extra: { name: "USD₮0", version: "1" }
+          }],
+          description: "Cortex: recall_memory — retrieve and verify a stored memory",
+          mimeType: "application/json"
+        },
         "GET /memory/recall/:id": {
           accepts: [{
             scheme: "exact",
@@ -210,6 +221,17 @@ async function getPaymentMiddleware() {
             extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
+          mimeType: "application/json"
+        },
+        "POST /memory/query": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: PRICE_QUERY,
+            extra: { name: "USD₮0", version: "1" }
+          }],
+          description: "Cortex: query_memory — search an agent's memory history",
           mimeType: "application/json"
         },
         "GET /memory/query": {
@@ -223,6 +245,17 @@ async function getPaymentMiddleware() {
           description: "Cortex: query_memory — search an agent's memory history",
           mimeType: "application/json"
         },
+        "POST /memory/digest": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: PRICE_DIGEST,
+            extra: { name: "USD₮0", version: "1" }
+          }],
+          description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
+          mimeType: "application/json"
+        },
         "GET /memory/digest": {
           accepts: [{
             scheme: "exact",
@@ -232,6 +265,17 @@ async function getPaymentMiddleware() {
             extra: { name: "USD\u20ae0", version: "1" }
           }],
           description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
+          mimeType: "application/json"
+        },
+        "POST /memory/my-agents": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: PRICE_AGENTS,
+            extra: { name: "USD₮0", version: "1" }
+          }],
+          description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by your EVM wallet",
           mimeType: "application/json"
         },
         "GET /memory/my-agents": {
