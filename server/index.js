@@ -201,7 +201,29 @@ async function getPaymentMiddleware() {
           description: "Cortex: write_memory — permanently store an agent memory object",
           mimeType: "application/json"
         },
+        "GET /memory/write": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: PRICE_WRITE,
+            extra: { name: "USD₮0", version: "1" }
+          }],
+          description: "Cortex: write_memory — permanently store an agent memory object",
+          mimeType: "application/json"
+        },
         "POST /memory/recall": {
+          accepts: [{
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: PRICE_RECALL,
+            extra: { name: "USD₮0", version: "1" }
+          }],
+          description: "Cortex: recall_memory — retrieve and verify a stored memory",
+          mimeType: "application/json"
+        },
+        "GET /memory/recall": {
           accepts: [{
             scheme: "exact",
             network: NETWORK,

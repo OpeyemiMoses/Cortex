@@ -58,6 +58,18 @@ router.post("/write", async (req, res) => {
   }
 });
 
+// GET fallback — write is a mutation and can't execute from a bare GET, but
+// the marketplace's x402 reachability pre-check (x402-validate) probes with
+// a plain GET before ever attempting the real paid POST. Without this, that
+// pre-check 404s and the whole designated-task flow is refused before it
+// gets anywhere near payment.
+router.get("/write", (req, res) => {
+  res.json({
+    service: "cortex-write-memory",
+    info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required."
+  });
+});
+
 async function handleRecall(id, params, res) {
   try {
     const { cid, auth_signature, auth_timestamp } = params;
@@ -82,6 +94,16 @@ router.post("/recall", (req, res) => {
   const { id } = body;
   if (!id) return res.status(400).json({ error: "id is required" });
   return handleRecall(id, body, res);
+});
+
+// Bare GET fallback (no :id) — same reachability-probe reasoning as
+// GET /write above: x402-validate's plain GET has nothing to recall by, so
+// this just confirms the endpoint is a real x402 service.
+router.get("/recall", (req, res) => {
+  res.json({
+    service: "cortex-recall-memory",
+    info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required."
+  });
 });
 
 async function handleQuery(params, res) {
