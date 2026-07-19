@@ -163,11 +163,13 @@ async function getPaymentMiddleware() {
 
     console.log(`[x402] Payments ENABLED on network ${NETWORK}, paying to ${PAY_TO}`);
 
-    // Hardcoded to $0.3 (300000 base units, 6 decimals for USD₮0) for every
-    // route. Previously configurable via X402_PRICE_* env vars, but those
-    // drifted out of sync with the intended price on Railway — fixing the
-    // value in code removes that failure mode entirely.
-    const PRICE_ALL = "300000";
+    // Hardcoded to $0.3 per call for every route. IMPORTANT: this SDK's
+    // `price` field takes a DOLLAR-denominated string and converts it to the
+    // asset's base units itself (see parseMoneyToDecimal/defaultMoneyConversion
+    // in @okxweb3/x402-evm) — it is NOT pre-converted base units. Passing
+    // "300000" here previously caused the SDK to multiply it by the asset's
+    // decimals again, requiring $300,000 per call instead of $0.3.
+    const PRICE_ALL = "0.3";
     const PRICE_WRITE   = PRICE_ALL;
     const PRICE_RECALL  = PRICE_ALL;
     const PRICE_QUERY   = PRICE_ALL;
@@ -175,7 +177,7 @@ async function getPaymentMiddleware() {
     const PRICE_AGENTS  = PRICE_ALL;
     const PRICE_MCP     = PRICE_ALL;
 
-    console.log(`[x402] Resolved prices (base units) — write:${PRICE_WRITE} recall:${PRICE_RECALL} query:${PRICE_QUERY} digest:${PRICE_DIGEST} agents:${PRICE_AGENTS} mcp:${PRICE_MCP}`);
+    console.log(`[x402] Resolved prices (USD) — write:${PRICE_WRITE} recall:${PRICE_RECALL} query:${PRICE_QUERY} digest:${PRICE_DIGEST} agents:${PRICE_AGENTS} mcp:${PRICE_MCP}`);
 
 
     const MCP_ACCEPTS = [{
