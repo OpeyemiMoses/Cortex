@@ -168,6 +168,8 @@ async function getPaymentMiddleware() {
     // conversion ambiguity.
     const PRICE_DEFAULT = "300000";
 
+    console.log(`[x402] Resolved prices — write:${process.env.X402_PRICE_WRITE_MEMORY || PRICE_DEFAULT} recall:${process.env.X402_PRICE_RECALL_MEMORY || PRICE_DEFAULT} query:${process.env.X402_PRICE_QUERY_MEMORY || PRICE_DEFAULT} mcp:${process.env.X402_PRICE_MCP_CALL || PRICE_DEFAULT}`);
+
     const MCP_ACCEPTS = [{
       scheme: "exact",
       network: NETWORK,
