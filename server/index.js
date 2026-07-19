@@ -56,6 +56,59 @@ const PAYMENTS_ENFORCED = process.env.PAYMENTS_ENFORCED === "true" || (process.e
 
 let realPaymentMw = null;
 
+/**
+ * Builds a stub 402 middleware for when the real OKX facilitator cannot be
+ * reached. This ensures the endpoint stays structurally x402-compliant (the
+ * PAYMENT-REQUIRED header is present and well-formed) even during facilitator
+ * outages, so OKX review bots never see an unpaywalled 200.
+ *
+ * Payments cannot be verified in stub mode — this is a safety net only.
+ */
+function buildStub402Middleware(NETWORK, PAY_TO) {
+  // USD₮0 contract on X Layer mainnet (eip155:196)
+  const ASSET = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+  const ROUTES = {
+    "/memory/write":     { price: "300000", desc: "Cortex: write_memory — permanently store an agent memory object" },
+    "/memory/recall":    { price: "300000", desc: "Cortex: recall_memory — retrieve and verify a stored memory" },
+    "/memory/query":     { price: "300000", desc: "Cortex: query_memory — search an agent's memory history" },
+    "/memory/digest":    { price: "300000", desc: "Cortex: get_memory_digest — generate a compressed summary of memory history" },
+    "/memory/my-agents": { price: "300000", desc: "Cortex: list_my_agents — list all namespaced agent IDs" },
+    "/mcp":              { price: "300000", desc: "Cortex Multi-Agent Memory & Digest MCP server" }
+  };
+
+  return (req, res, next) => {
+    const routeKey = Object.keys(ROUTES).find(p =>
+      req.path === p || req.path.startsWith(p + "/") || req.path.startsWith(p + "?")
+    );
+    if (!routeKey) return next();
+
+    const config = ROUTES[routeKey];
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const challenge = {
+      x402Version: 2,
+      resource: {
+        url: `${baseUrl}${req.path}`,
+        description: config.desc,
+        mimeType: "application/json"
+      },
+      accepts: [{
+        scheme: "exact",
+        network: NETWORK,
+        asset: ASSET,
+        amount: config.price,
+        payTo: PAY_TO,
+        maxTimeoutSeconds: 300,
+        extra: { name: "USD₮0", version: "1" }
+      }]
+    };
+    const encoded = Buffer.from(JSON.stringify(challenge)).toString("base64");
+    console.warn(`[x402-stub] Returning stub 402 for ${req.method} ${req.path} (facilitator unavailable)`);
+    res.status(402)
+      .set("PAYMENT-REQUIRED", encoded)
+      .json({ error: "Payment required", x402Version: 2 });
+  };
+}
+
 async function getPaymentMiddleware() {
   if (!PAYMENTS_ENFORCED) {
     console.log("Cortex: PAYMENTS_ENFORCED=false — all requests pass through unpaid.");
@@ -89,8 +142,24 @@ async function getPaymentMiddleware() {
     const resourceServer = new x402ResourceServer(facilitatorClient);
     resourceServer.register(NETWORK, new ExactEvmScheme());
 
-    // Validate credentials/connectivity BEFORE handing back working middleware
-    await resourceServer.initialize();
+    // Retry initialization with backoff — cold starts on Railway can cause transient
+    // DNS / network unavailability that resolves within seconds.
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 5000;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await resourceServer.initialize();
+        break; // success — exit retry loop
+      } catch (initErr) {
+        if (attempt < MAX_RETRIES) {
+          console.warn(`[x402] initialize() attempt ${attempt}/${MAX_RETRIES} failed (${initErr.message}). Retrying in ${RETRY_DELAY_MS}ms...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        } else {
+          console.error(`[x402] All ${MAX_RETRIES} initialize() attempts failed. Installing stub 402 middleware.`);
+          return buildStub402Middleware(NETWORK, PAY_TO);
+        }
+      }
+    }
 
     console.log(`[x402] Payments ENABLED on network ${NETWORK}, paying to ${PAY_TO}`);
 
@@ -99,7 +168,7 @@ async function getPaymentMiddleware() {
       network: NETWORK,
       payTo: PAY_TO,
       price: process.env.X402_PRICE_MCP_CALL || "$0.3",
-      extra: { decimals: 6 }
+      extra: { name: "USD₮0", version: "1" }
     }];
 
     return paymentMiddleware(
@@ -109,8 +178,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: "$0.3",
-            extra: { decimals: 6 }
+            price: process.env.X402_PRICE_WRITE_MEMORY || "$0.3",
+            extra: { name: "USD₮0", version: "1" }
           }],
           description: "Cortex: write_memory — permanently store an agent memory object",
           mimeType: "application/json"
@@ -120,8 +189,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: "$0.3",
-            extra: { decimals: 6 }
+            price: process.env.X402_PRICE_RECALL_MEMORY || "$0.3",
+            extra: { name: "USD₮0", version: "1" }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
           mimeType: "application/json"
@@ -131,8 +200,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: "$0.3",
-            extra: { decimals: 6 }
+            price: process.env.X402_PRICE_QUERY_MEMORY || "$0.3",
+            extra: { name: "USD₮0", version: "1" }
           }],
           description: "Cortex: query_memory — search an agent's memory history",
           mimeType: "application/json"
@@ -142,8 +211,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: "$0.3",
-            extra: { decimals: 6 }
+            price: process.env.X402_PRICE_DIGEST || "$0.3",
+            extra: { name: "USD₮0", version: "1" }
           }],
           description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
           mimeType: "application/json"
@@ -153,8 +222,8 @@ async function getPaymentMiddleware() {
             scheme: "exact",
             network: NETWORK,
             payTo: PAY_TO,
-            price: "$0.3",
-            extra: { decimals: 6 }
+            price: process.env.X402_PRICE_MY_AGENTS || "$0.3",
+            extra: { name: "USD₮0", version: "1" }
           }],
           description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by your EVM wallet",
           mimeType: "application/json"
@@ -173,22 +242,42 @@ async function getPaymentMiddleware() {
       resourceServer
     );
   } catch (err) {
-    console.error(`[x402] Failed to initialize payment facilitator (${err.message}) — falling back to unpaywalled routes.`);
-    return (req, res, next) => next();
+    // Module load error or unexpected failure — use stub, NOT silent pass-through.
+    console.error(`[x402] Fatal initialization error (${err.message}). Installing stub 402 middleware.`);
+    return buildStub402Middleware(
+      process.env.X402_NETWORK || "eip155:196",
+      process.env.PAY_TO_ADDRESS || ""
+    );
   }
 }
+
+// Protected path prefixes that must never be reachable without a valid payment.
+const PROTECTED_PATH_PREFIXES = ["/memory/", "/mcp"];
 
 const paymentMwReady = getPaymentMiddleware()
   .then((mw) => {
     realPaymentMw = mw;
   })
   .catch((err) => {
-    console.error("[x402] Failed to initialize payment middleware:", err.message);
-    realPaymentMw = (req, res, next) => next();
+    console.error("[x402] Unhandled error in payment middleware init:", err.message);
+    // Stub instead of pass-through — keeps the endpoint x402-compliant under all failures.
+    realPaymentMw = buildStub402Middleware(
+      process.env.X402_NETWORK || "eip155:196",
+      process.env.PAY_TO_ADDRESS || ""
+    );
   });
 
 app.use((req, res, next) => {
   if (realPaymentMw) return realPaymentMw(req, res, next);
+
+  // Payment middleware still initializing — block protected paths to prevent
+  // any free access during the startup window.
+  if (PAYMENTS_ENFORCED && PROTECTED_PATH_PREFIXES.some(p =>
+    req.path === p.slice(0, -1) || req.path.startsWith(p)
+  )) {
+    return res.status(503).json({ error: "Service starting up, please retry in a few seconds." });
+  }
+
   paymentMwReady.then(() => realPaymentMw(req, res, next)).catch(next);
 });
 
