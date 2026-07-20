@@ -172,23 +172,25 @@ async function getPaymentMiddleware() {
       extra: { name: "USD\u20ae0", version: "1" }
     }];
 
-    // Bazaar-style outputSchema.input, embedded in `extra` (the one field the
-    // SDK's schema preserves verbatim). Without this, a marketplace buyer's
-    // x402-check has no way to learn a call needs real business params \u2014 our
-    // GET routes return a benign 200 info stub when called with none (so the
-    // pre-flight probe still "looks like a valid service"), which means
-    // x402-check never sets inputRequired, and the automated paid replay
-    // then hits the same param-less path: charged, but no real work done.
+    // Attempt 2: the camelCase `outputSchema.input` shape (attempt 1) never
+    // made onchainos's x402-check report inputRequired/fields \u2014 a binary
+    // strings dump showed it also recognizes snake_case `input_schema` /
+    // `input_required` / `fields`, separately from the camelCase MCP-tool
+    // schema fields. Embedded in `extra` (the one field the SDK's
+    // PaymentRequirementsSchema preserves verbatim; everything else on the
+    // challenge is stripped to a fixed shape). Verify via a free
+    // `agent x402-check` call (no payment) before ever re-running a real
+    // task \u2014 each failed guess here costs Cortex a real, permanent review.
     function inputSchema(method, carrierKey, properties, required) {
       return {
-        outputSchema: {
-          input: {
-            type: "http",
-            method,
-            [carrierKey]: { type: "object", properties, required },
-            ...(carrierKey === "body" ? { bodyType: "json" } : {})
-          }
-        }
+        input_schema: { type: "object", properties, required },
+        input_required: true,
+        fields: Object.keys(properties).map((name) => ({
+          name,
+          type: properties[name].type,
+          description: properties[name].description || '',
+          required: required.includes(name)
+        }))
       };
     }
 
