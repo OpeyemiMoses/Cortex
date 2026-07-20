@@ -10,13 +10,18 @@ const { decodePaymentSignatureHeader } = require("@okxweb3/x402-core");
  */
 function extractPayerAddress(req) {
   const header = req.header("payment-signature") || req.header("PAYMENT-SIGNATURE");
-  if (!header) return null;
+  if (!header) {
+    console.log("[payerExtract-debug] no payment-signature header; headers present:", Object.keys(req.headers).join(","));
+    return null;
+  }
 
   try {
     const payload = decodePaymentSignatureHeader(header);
     const from = payload?.payload?.authorization?.from;
+    console.log("[payerExtract-debug] decoded payload:", JSON.stringify(payload));
     return typeof from === "string" ? from.toLowerCase() : null;
-  } catch {
+  } catch (err) {
+    console.log("[payerExtract-debug] decode failed:", err.message, "raw header:", header);
     return null;
   }
 }
