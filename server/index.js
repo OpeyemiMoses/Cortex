@@ -172,6 +172,57 @@ async function getPaymentMiddleware() {
       extra: { name: "USD\u20ae0", version: "1" }
     }];
 
+    // Bazaar-style outputSchema.input, embedded in `extra` (the one field the
+    // SDK's schema preserves verbatim). Without this, a marketplace buyer's
+    // x402-check has no way to learn a call needs real business params \u2014 our
+    // GET routes return a benign 200 info stub when called with none (so the
+    // pre-flight probe still "looks like a valid service"), which means
+    // x402-check never sets inputRequired, and the automated paid replay
+    // then hits the same param-less path: charged, but no real work done.
+    function inputSchema(method, carrierKey, properties, required) {
+      return {
+        outputSchema: {
+          input: {
+            type: "http",
+            method,
+            [carrierKey]: { type: "object", properties, required },
+            ...(carrierKey === "body" ? { bodyType: "json" } : {})
+          }
+        }
+      };
+    }
+
+    const WRITE_PROPS = {
+      agent_id: { type: "string", description: "Agent ID to write the memory under" },
+      type: { type: "string", enum: ["event", "decision", "outcome", "preference", "conversation"] },
+      content: { type: "string", description: "Memory content to store" },
+      visibility: { type: "string", enum: ["private", "public", "permissioned"] }
+    };
+    const WRITE_REQUIRED = ["agent_id", "type", "content"];
+
+    const RECALL_PROPS = {
+      id: { type: "string", description: "Memory ID to recall" },
+      cid: { type: "string", description: "Optional IPFS CID fallback" }
+    };
+    const RECALL_REQUIRED = ["id"];
+
+    const QUERY_PROPS = {
+      agent_id: { type: "string", description: "Agent ID to query memories for" },
+      type: { type: "string", description: "Optional memory type filter" },
+      limit: { type: "string", description: "Optional result limit (default 20)" },
+      offset: { type: "string", description: "Optional result offset" },
+      from: { type: "string", description: "Optional ISO date range start" },
+      to: { type: "string", description: "Optional ISO date range end" }
+    };
+    const QUERY_REQUIRED = ["agent_id"];
+
+    const DIGEST_PROPS = {
+      agent_id: { type: "string", description: "Agent ID to summarize memory for" },
+      from: { type: "string", description: "Optional ISO date range start" },
+      to: { type: "string", description: "Optional ISO date range end" }
+    };
+    const DIGEST_REQUIRED = ["agent_id"];
+
     return paymentMiddleware(
       {
         "POST /memory/write": {
@@ -180,7 +231,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_WRITE,
-            extra: { name: "USD\u20ae0", version: "1" }
+            extra: { name: "USD\u20ae0", version: "1", ...inputSchema("POST", "body", WRITE_PROPS, WRITE_REQUIRED) }
           }],
           description: "Cortex: write_memory — permanently store an agent memory object",
           mimeType: "application/json"
@@ -191,7 +242,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_WRITE,
-            extra: { name: "USD₮0", version: "1" }
+            extra: { name: "USD₮0", version: "1", ...inputSchema("GET", "queryParams", WRITE_PROPS, WRITE_REQUIRED) }
           }],
           description: "Cortex: write_memory — permanently store an agent memory object",
           mimeType: "application/json"
@@ -202,7 +253,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_RECALL,
-            extra: { name: "USD₮0", version: "1" }
+            extra: { name: "USD₮0", version: "1", ...inputSchema("POST", "body", RECALL_PROPS, RECALL_REQUIRED) }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
           mimeType: "application/json"
@@ -213,7 +264,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_RECALL,
-            extra: { name: "USD₮0", version: "1" }
+            extra: { name: "USD₮0", version: "1", ...inputSchema("GET", "queryParams", RECALL_PROPS, RECALL_REQUIRED) }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
           mimeType: "application/json"
@@ -224,7 +275,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_RECALL,
-            extra: { name: "USD\u20ae0", version: "1" }
+            extra: { name: "USD\u20ae0", version: "1", ...inputSchema("GET", "queryParams", RECALL_PROPS, RECALL_REQUIRED) }
           }],
           description: "Cortex: recall_memory — retrieve and verify a stored memory",
           mimeType: "application/json"
@@ -235,7 +286,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_QUERY,
-            extra: { name: "USD₮0", version: "1" }
+            extra: { name: "USD₮0", version: "1", ...inputSchema("POST", "body", QUERY_PROPS, QUERY_REQUIRED) }
           }],
           description: "Cortex: query_memory — search an agent's memory history",
           mimeType: "application/json"
@@ -246,7 +297,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_QUERY,
-            extra: { name: "USD\u20ae0", version: "1" }
+            extra: { name: "USD\u20ae0", version: "1", ...inputSchema("GET", "queryParams", QUERY_PROPS, QUERY_REQUIRED) }
           }],
           description: "Cortex: query_memory — search an agent's memory history",
           mimeType: "application/json"
@@ -257,7 +308,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_DIGEST,
-            extra: { name: "USD₮0", version: "1" }
+            extra: { name: "USD₮0", version: "1", ...inputSchema("POST", "body", DIGEST_PROPS, DIGEST_REQUIRED) }
           }],
           description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
           mimeType: "application/json"
@@ -268,7 +319,7 @@ async function getPaymentMiddleware() {
             network: NETWORK,
             payTo: PAY_TO,
             price: PRICE_DIGEST,
-            extra: { name: "USD\u20ae0", version: "1" }
+            extra: { name: "USD\u20ae0", version: "1", ...inputSchema("GET", "queryParams", DIGEST_PROPS, DIGEST_REQUIRED) }
           }],
           description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
           mimeType: "application/json"
