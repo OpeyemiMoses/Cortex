@@ -40,6 +40,103 @@ const PAYMENTS_ENFORCED = process.env.PAYMENTS_ENFORCED === "true" || (process.e
 
 let realPaymentMw = null;
 
+// Attempt 3 at getting onchainos's x402-check to recognize required params.
+// Attempts 1 (camelCase outputSchema.input) and 2 (snake_case input_schema,
+// nested in accepts[i].extra) both landed correctly in the decoded 402 body
+// (verified live) but x402-check's own output never picked either up as
+// inputRequired/fields. This attempt puts the same fields at the TOP LEVEL
+// of the 402 JSON body itself (sibling to x402Version/resource/accepts),
+// since PaymentRequirementsSchema strips unknown keys from `accepts[i]` but
+// we've never actually confirmed what the top-level envelope does — the
+// paymentMiddleware() config API has no top-level passthrough, so this
+// requires intercepting the response after the SDK builds it.
+const INPUT_FIELDS_BY_PATH = {
+  "/memory/write": {
+    properties: {
+      agent_id: { type: "string", description: "Agent ID to write the memory under" },
+      type: { type: "string", enum: ["event", "decision", "outcome", "preference", "conversation"] },
+      content: { type: "string", description: "Memory content to store" },
+      visibility: { type: "string", enum: ["private", "public", "permissioned"] }
+    },
+    required: ["agent_id", "type", "content"]
+  },
+  "/memory/recall": {
+    properties: {
+      id: { type: "string", description: "Memory ID to recall" },
+      cid: { type: "string", description: "Optional IPFS CID fallback" }
+    },
+    required: ["id"]
+  },
+  "/memory/query": {
+    properties: {
+      agent_id: { type: "string", description: "Agent ID to query memories for" },
+      type: { type: "string", description: "Optional memory type filter" },
+      limit: { type: "string", description: "Optional result limit (default 20)" },
+      offset: { type: "string", description: "Optional result offset" },
+      from: { type: "string", description: "Optional ISO date range start" },
+      to: { type: "string", description: "Optional ISO date range end" }
+    },
+    required: ["agent_id"]
+  },
+  "/memory/digest": {
+    properties: {
+      agent_id: { type: "string", description: "Agent ID to summarize memory for" },
+      from: { type: "string", description: "Optional ISO date range start" },
+      to: { type: "string", description: "Optional ISO date range end" }
+    },
+    required: ["agent_id"]
+  }
+};
+
+function matchInputFields(path) {
+  const key = Object.keys(INPUT_FIELDS_BY_PATH).find(p => path === p || path.startsWith(p + "/") || path.startsWith(p + "?"));
+  return key ? INPUT_FIELDS_BY_PATH[key] : null;
+}
+
+function fieldsFor(fieldsSpec) {
+  return Object.keys(fieldsSpec.properties).map((name) => ({
+    name,
+    type: fieldsSpec.properties[name].type,
+    description: fieldsSpec.properties[name].description || "",
+    required: fieldsSpec.required.includes(name)
+  }));
+}
+
+// The real 402 challenge onchainos reads is the base64 PAYMENT-REQUIRED
+// *header*, not the JSON body (Cortex's own 402 body is just `{}` — all
+// the actual challenge data has always been in the header, confirmed by
+// every `merchantBody: "{}"` we've seen all session). So the lever isn't
+// res.json — it's this header, set internally by the SDK via
+// res.setHeader("PAYMENT-REQUIRED", <base64>) before res.json() runs.
+// Intercept that call, decode, splice in top-level input_required/fields/
+// requiredAnyOf, and re-encode before it's actually sent.
+function topLevelInputRequiredMiddleware(req, res, next) {
+  const fieldsSpec = matchInputFields(req.path);
+  if (!fieldsSpec) return next();
+
+  const fields = fieldsFor(fieldsSpec);
+  const originalSetHeader = res.setHeader.bind(res);
+  res.setHeader = (name, value) => {
+    if (String(name).toLowerCase() === "payment-required" && typeof value === "string") {
+      try {
+        const decoded = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+        const augmented = {
+          ...decoded,
+          input_required: true,
+          inputRequired: true,
+          fields,
+          requiredAnyOf: fieldsSpec.required
+        };
+        value = Buffer.from(JSON.stringify(augmented)).toString("base64");
+      } catch (err) {
+        console.error("[input-required-injection] failed to augment PAYMENT-REQUIRED header:", err.message);
+      }
+    }
+    return originalSetHeader(name, value);
+  };
+  next();
+}
+
 /**
  * Builds a stub 402 middleware for when the real OKX facilitator cannot be
  * reached. This ensures the endpoint stays structurally x402-compliant (the
@@ -386,6 +483,8 @@ const paymentMwReady = getPaymentMiddleware()
       process.env.PAY_TO_ADDRESS || ""
     );
   });
+
+app.use(topLevelInputRequiredMiddleware);
 
 app.use((req, res, next) => {
   if (realPaymentMw) return realPaymentMw(req, res, next);
