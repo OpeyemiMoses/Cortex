@@ -66,12 +66,20 @@ async function writeMemory(rawPayload, options = {}) {
   await cache.addToIndex(payload.agent_id, id);
   await cache.cacheSet(id, record);
 
-  // If a wallet claimed/wrote to this agent, track the mapping
-  if (recoveredWallet) {
-    await cache.addAgentToWallet(recoveredWallet, payload.agent_id);
-  } else if (auth.isNamespaced(payload.agent_id)) {
-    const { wallet } = auth.parseNamespaced(payload.agent_id);
-    await cache.addAgentToWallet(wallet, payload.agent_id);
+  // If a wallet claimed/wrote to this agent, track the mapping so
+  // "my agents" can find it later. Priority: a signature-recovered wallet
+  // (CALLER_AUTH_ENFORCED=true) > an already-namespaced agent_id > the
+  // wallet that paid for this call via x402. The last one is what keeps
+  // this working under CALLER_AUTH_ENFORCED=false (the current production
+  // setting) — otherwise the index never gets populated at all.
+  const walletForIndex =
+    recoveredWallet ||
+    (auth.isNamespaced(payload.agent_id) ? auth.parseNamespaced(payload.agent_id).wallet : null) ||
+    options.payerAddress ||
+    null;
+
+  if (walletForIndex) {
+    await cache.addAgentToWallet(walletForIndex, payload.agent_id);
   }
 
   return record;

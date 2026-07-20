@@ -42,9 +42,9 @@ const WRITE_ALIASES = {
 const RECALL_ALIASES = { id: ["memoryId"], cid: ["ipfsCid"] };
 const AUTH_ALIASES = { auth_signature: ["authSignature"], auth_timestamp: ["authTimestamp"] };
 
-async function handleWrite(params, res) {
+async function handleWrite(params, res, payerAddress) {
   try {
-    const record = await memoryService.writeMemory(params);
+    const record = await memoryService.writeMemory(params, { payerAddress });
     res.status(201).json({ memory: record });
   } catch (err) {
     if (err.statusCode === 400) {
@@ -58,7 +58,9 @@ async function handleWrite(params, res) {
   }
 }
 
-router.post("/write", (req, res) => handleWrite(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }), res));
+router.post("/write", (req, res) =>
+  handleWrite(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }), res, req.payerAddress)
+);
 
 // GET fallback — the marketplace's x402 reachability pre-check
 // (x402-validate) probes with a plain GET before ever attempting the real
@@ -75,7 +77,7 @@ router.get("/write", (req, res) => {
       info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required."
     });
   }
-  return handleWrite(params, res);
+  return handleWrite(params, res, req.payerAddress);
 });
 
 async function handleRecall(id, params, res) {
@@ -170,27 +172,57 @@ async function handleDigest(params, res) {
 router.get("/digest", (req, res) => handleDigest(normalize(req.query, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
 router.post("/digest", (req, res) => handleDigest(normalize(req.body, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
 
-async function handleMyAgents(params, res) {
+async function handleMyAgents(params, res, payerAddress) {
   const { auth_signature, auth_timestamp } = params;
-  if (!auth_signature || !auth_timestamp) {
-    return res.status(401).json({ error: "auth_signature and auth_timestamp are required." });
+  let wallet = null;
+
+  if (process.env.CALLER_AUTH_ENFORCED === "true") {
+    // Signature stays authoritative when caller-auth is enforced.
+    if (!auth_signature || !auth_timestamp) {
+      return res.status(401).json({ error: "auth_signature and auth_timestamp are required." });
+    }
+    try {
+      const message = auth.buildListAgentsMessage(auth_timestamp);
+      wallet = auth.verifySignature(message, auth_signature, auth_timestamp);
+    } catch (err) {
+      return res.status(err.statusCode || 401).json({ error: err.message });
+    }
+  } else {
+    // CALLER_AUTH_ENFORCED=false (current production default): the x402
+    // payment that already gated this request identifies the caller — no
+    // second, hand-rolled signature the marketplace has no way to produce.
+    // An explicit signature is still honored if one is sent.
+    wallet = payerAddress;
+    if (!wallet && auth_signature && auth_timestamp) {
+      try {
+        const message = auth.buildListAgentsMessage(auth_timestamp);
+        wallet = auth.verifySignature(message, auth_signature, auth_timestamp);
+      } catch {
+        wallet = null;
+      }
+    }
+  }
+
+  if (!wallet) {
+    return res.status(400).json({
+      error: "Could not determine caller wallet. Pay via x402 to identify your wallet, or provide auth_signature/auth_timestamp."
+    });
   }
 
   try {
-    const message = auth.buildListAgentsMessage(auth_timestamp);
-    const recoveredWallet = auth.verifySignature(message, auth_signature, auth_timestamp);
-    const agents = await cache.getAgentsByWallet(recoveredWallet);
+    const agents = await cache.getAgentsByWallet(wallet);
     res.json({ agents });
   } catch (err) {
-    if (err.statusCode === 401 || err.statusCode === 403) {
-      return res.status(err.statusCode).json({ error: err.message });
-    }
     console.error("my-agents failed:", err);
     res.status(500).json({ error: "Failed to list owned agents" });
   }
 }
 
-router.get("/my-agents", (req, res) => handleMyAgents(normalize(req.query, AUTH_ALIASES), res));
-router.post("/my-agents", (req, res) => handleMyAgents(normalize(req.body, AUTH_ALIASES), res));
+router.get("/my-agents", (req, res) =>
+  handleMyAgents(normalize(req.query, AUTH_ALIASES), res, req.payerAddress)
+);
+router.post("/my-agents", (req, res) =>
+  handleMyAgents(normalize(req.body, AUTH_ALIASES), res, req.payerAddress)
+);
 
 module.exports = router;

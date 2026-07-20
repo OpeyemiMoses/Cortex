@@ -18,6 +18,7 @@ const cors = require("cors");
 
 const memoryRoutes = require("./routes/memory");
 const { mountMcp } = require("./mcpHttp");
+const { extractPayerAddress } = require("./services/auth/paymentIdentity");
 
 const app = express();
 // Trust proxy is required to reconstruct the correct https:// protocol
@@ -362,6 +363,16 @@ app.use((req, res, next) => {
   }
 
   paymentMwReady.then(() => realPaymentMw(req, res, next)).catch(next);
+});
+
+// Runs only for requests that already cleared the payment middleware above
+// (or that didn't need to). Recovers the payer's wallet address from the
+// same PAYMENT-SIGNATURE header the middleware already verified, so routes
+// can identify "whose wallet paid for this call" without a second,
+// hand-rolled signature scheme.
+app.use((req, res, next) => {
+  req.payerAddress = extractPayerAddress(req);
+  next();
 });
 
 /**
