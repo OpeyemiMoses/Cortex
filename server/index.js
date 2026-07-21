@@ -334,80 +334,6 @@ const paymentMwReady = getPaymentMiddleware()
     );
   });
 
-// Discovery gate — runs BEFORE the payment paywall below. A request to
-// /memory/write, /memory/recall, /memory/query, or /memory/digest that
-// doesn't carry the fields that route actually needs is a discovery probe,
-// not a real attempt, and gets answered for free (no 402, no charge) — the
-// same pattern well-behaved x402 services use to let a client learn the
-// required shape without paying for the privilege. Only requests that
-// already carry real fields fall through to the payment gate. Reuses the
-// routes' own alias-aware normalize() so this can't drift out of sync with
-// what each route actually accepts.
-// (query_memory/get_memory_digest already returned 400 on a missing agent_id
-// before any of this existed, so they were never at risk of the "charged for
-// nothing" bug — this addition is purely about matching write/recall's free
-// discovery experience, not fixing a money-losing bug here.)
-const DISCOVERY_ROUTES = {
-  "/memory/write": {
-    aliasMap: memoryRoutes.WRITE_ALIASES,
-    requiredAny: ["agent_id", "type", "content"],
-    service: "cortex-write-memory",
-    info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required once those fields are included."
-  },
-  "/memory/recall": {
-    aliasMap: memoryRoutes.RECALL_ALIASES,
-    requiredAny: ["id"],
-    service: "cortex-recall-memory",
-    info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required once an id is included."
-  },
-  "/memory/query": {
-    aliasMap: memoryRoutes.AGENT_ID_ALIASES,
-    requiredAny: ["agent_id"],
-    service: "cortex-query-memory",
-    info: "Send agent_id as a query param or JSON body field to search an agent's memory history. A valid x402 payment header is required once agent_id is included."
-  },
-  "/memory/digest": {
-    aliasMap: memoryRoutes.AGENT_ID_ALIASES,
-    requiredAny: ["agent_id"],
-    service: "cortex-memory-digest",
-    info: "Send agent_id as a query param or JSON body field to generate a memory digest. A valid x402 payment header is required once agent_id is included."
-  }
-};
-
-// A request that already carries a payment signature has committed funds —
-// even if its params are incomplete, that's a broken paid attempt, not a
-// free discovery probe. Route it to the real handler instead, where it gets
-// a proper 400 (handleWrite's own zod validation) with field-level detail.
-// This can't cause a stray charge: the OKX x402 SDK middleware only settles
-// when the downstream response status is < 400, so an invalid paid request
-// still ends up unsettled — the payer just gets told what's actually wrong
-// instead of a misleading free "here's how to use this" blurb.
-function hasPaymentAuth(req) {
-  return Boolean(req.headers["payment-signature"] || req.headers["x-payment"]);
-}
-
-app.use((req, res, next) => {
-  const config = DISCOVERY_ROUTES[req.path];
-  if (!config) return next();
-
-  // Merge query + body regardless of method: the marketplace's real paid
-  // replay isn't guaranteed to put params in the body just because the
-  // request is a POST (it reuses whichever shape passed the reachability
-  // probe, which can be a GET-style query string on any method). Only
-  // checking one source let a genuine paid attempt get misclassified as a
-  // free discovery probe whenever its params landed in the other one.
-  const source = { ...(req.query || {}), ...(req.body || {}) };
-  const normalized = memoryRoutes.normalize(source, config.aliasMap);
-  const hasRealParams = config.requiredAny.some(
-    (key) => normalized[key] !== undefined && normalized[key] !== ""
-  );
-
-  if (!hasRealParams && !hasPaymentAuth(req)) {
-    return res.status(200).json({ service: config.service, info: config.info });
-  }
-  next();
-});
-
 // /memory/my-agents discovery gate — different shape from the others above,
 // because this route can succeed with ZERO explicit params: the x402
 // payment itself supplies the caller's wallet. That's the route's normal,
@@ -419,8 +345,8 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   if (req.path !== "/memory/my-agents") return next();
 
-  // Same merge as the discovery gate above — don't assume params only
-  // arrive in req.body for non-GET requests.
+  // Merge query + body — don't assume params only arrive in req.body for
+  // non-GET requests.
   const source = { ...(req.query || {}), ...(req.body || {}) };
   const normalized = memoryRoutes.normalize(source, {
     ...memoryRoutes.AUTH_ALIASES,
