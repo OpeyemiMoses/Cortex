@@ -61,22 +61,37 @@ function runOnchainos(args, timeoutMs = 60_000) {
 // ─── Parse serviceParams ──────────────────────────────────────────────────────
 
 /**
- * Converts the flat "agentId: X; memoryType: Y; ..." string from serviceParams
- * into a structured object for memoryService.writeMemory().
+ * Converts serviceParams into a structured object for memoryService.writeMemory().
+ * Accepts either a JSON object string (e.g. from a task created with a raw
+ * JSON --service-params body) or the flat "agentId: X; memoryType: Y; ..."
+ * string the marketplace's natural-language param extraction produces.
  *
- * @param {string} raw  e.g. "agentId: Larry-Agent; memoryType: event; memoryContent: I think its fixed; visibility: private"
+ * @param {string} raw
  * @returns {{ agent_id, type, content, visibility }}
  */
 function parseServiceParams(raw) {
   const map = {};
   if (!raw) return map;
-  raw.split(";").forEach((pair) => {
-    const idx = pair.indexOf(":");
-    if (idx < 0) return;
-    const key = pair.slice(0, idx).trim();
-    const val = pair.slice(idx + 1).trim();
-    map[key] = val;
-  });
+
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      Object.assign(map, JSON.parse(trimmed));
+    } catch {
+      // Not valid JSON despite the leading brace — fall through to the
+      // semicolon-delimited parser below.
+    }
+  }
+
+  if (Object.keys(map).length === 0) {
+    raw.split(";").forEach((pair) => {
+      const idx = pair.indexOf(":");
+      if (idx < 0) return;
+      const key = pair.slice(0, idx).trim();
+      const val = pair.slice(idx + 1).trim();
+      map[key] = val;
+    });
+  }
 
   return {
     agent_id:   map["agentId"]     || map["agent_id"]     || "",

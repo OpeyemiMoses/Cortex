@@ -390,8 +390,14 @@ app.use((req, res, next) => {
   const config = DISCOVERY_ROUTES[req.path];
   if (!config) return next();
 
-  const source = req.method === "GET" ? req.query : req.body;
-  const normalized = memoryRoutes.normalize(source || {}, config.aliasMap);
+  // Merge query + body regardless of method: the marketplace's real paid
+  // replay isn't guaranteed to put params in the body just because the
+  // request is a POST (it reuses whichever shape passed the reachability
+  // probe, which can be a GET-style query string on any method). Only
+  // checking one source let a genuine paid attempt get misclassified as a
+  // free discovery probe whenever its params landed in the other one.
+  const source = { ...(req.query || {}), ...(req.body || {}) };
+  const normalized = memoryRoutes.normalize(source, config.aliasMap);
   const hasRealParams = config.requiredAny.some(
     (key) => normalized[key] !== undefined && normalized[key] !== ""
   );
@@ -413,8 +419,10 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   if (req.path !== "/memory/my-agents") return next();
 
-  const source = req.method === "GET" ? req.query : req.body;
-  const normalized = memoryRoutes.normalize(source || {}, {
+  // Same merge as the discovery gate above — don't assume params only
+  // arrive in req.body for non-GET requests.
+  const source = { ...(req.query || {}), ...(req.body || {}) };
+  const normalized = memoryRoutes.normalize(source, {
     ...memoryRoutes.AUTH_ALIASES,
     ...memoryRoutes.MY_AGENTS_ALIASES
   });
