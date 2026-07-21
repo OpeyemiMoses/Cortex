@@ -131,4 +131,16 @@ function registerTools(server) {
   );
 }
 
-module.exports = { registerTools };
+// Required (non-optional) argument names per tool, kept next to the schemas
+// above so the two can't drift apart. Used by server/index.js's pre-payment
+// MCP discovery gate to answer an incomplete tools/call for free instead of
+// charging for a call that was always going to fail validation.
+const TOOL_REQUIRED_FIELDS = {
+  write_memory: ["agent_id", "type", "content"],
+  recall_memory: ["id"],
+  query_memory: ["agent_id"],
+  get_memory_digest: ["agent_id"],
+  list_my_agents: ["auth_signature", "auth_timestamp"]
+};
+
+module.exports = { registerTools, TOOL_REQUIRED_FIELDS };

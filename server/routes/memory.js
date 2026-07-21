@@ -72,8 +72,13 @@ router.post("/write", (req, res) =>
 router.get("/write", (req, res) => {
   const params = normalize(req.query, { ...WRITE_ALIASES, ...AUTH_ALIASES });
   if (!params.agent_id && !params.type && !params.content) {
-    return res.json({
+    // 400, not 200: the x402 payment middleware only settles the charge when
+    // the downstream response status is < 400 (see paymentMiddleware in
+    // index.js). Returning 200 here made this branch silently charge callers
+    // for a request that never wrote anything.
+    return res.status(400).json({
       service: "cortex-write-memory",
+      error: "missing_params",
       info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required."
     });
   }
@@ -113,8 +118,11 @@ router.post("/recall", (req, res) => {
 router.get("/recall", (req, res) => {
   const params = normalize(req.query, { ...RECALL_ALIASES, ...AUTH_ALIASES });
   if (!params.id) {
-    return res.json({
+    // Same fix as GET /write above: must be < 200/400 boundary correctly, or
+    // the payment middleware settles the charge for a no-op info response.
+    return res.status(400).json({
       service: "cortex-recall-memory",
+      error: "missing_params",
       info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required."
     });
   }
@@ -224,5 +232,12 @@ router.get("/my-agents", (req, res) =>
 router.post("/my-agents", (req, res) =>
   handleMyAgents(normalize(req.body, AUTH_ALIASES), res, req.payerAddress)
 );
+
+// Exposed so index.js's pre-payment discovery gate can use the exact same
+// alias-aware field detection as these routes, instead of a second hardcoded
+// list that could drift out of sync.
+router.normalize = normalize;
+router.WRITE_ALIASES = WRITE_ALIASES;
+router.RECALL_ALIASES = RECALL_ALIASES;
 
 module.exports = router;

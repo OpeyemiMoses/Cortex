@@ -6,6 +6,7 @@ const cors = require("cors");
 const memoryRoutes = require("./routes/memory");
 const { mountMcp } = require("./mcpHttp");
 const { extractPayerAddress } = require("./services/auth/paymentIdentity");
+const { TOOL_REQUIRED_FIELDS } = require("../mcp/tools");
 
 const app = express();
 // Trust proxy is required to reconstruct the correct https:// protocol
@@ -182,7 +183,7 @@ async function getPaymentMiddleware() {
             price: PRICE_WRITE,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: write_memory — permanently store an agent memory object",
+          description: "Cortex: write_memory — permanently store an agent memory object. Requires a JSON body: agent_id (string), type (string), content (string), visibility (\"private\" | \"public\" | \"permissioned\").",
           mimeType: "application/json"
         },
         "GET /memory/write": {
@@ -193,7 +194,7 @@ async function getPaymentMiddleware() {
             price: PRICE_WRITE,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: write_memory — permanently store an agent memory object",
+          description: "Cortex: write_memory — permanently store an agent memory object. Requires query params or JSON body: agent_id (string), type (string), content (string), visibility (\"private\" | \"public\" | \"permissioned\").",
           mimeType: "application/json"
         },
         "POST /memory/recall": {
@@ -204,7 +205,7 @@ async function getPaymentMiddleware() {
             price: PRICE_RECALL,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: recall_memory — retrieve and verify a stored memory",
+          description: "Cortex: recall_memory — retrieve and verify a stored memory. Requires a JSON body: id (string).",
           mimeType: "application/json"
         },
         "GET /memory/recall": {
@@ -215,7 +216,7 @@ async function getPaymentMiddleware() {
             price: PRICE_RECALL,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: recall_memory — retrieve and verify a stored memory",
+          description: "Cortex: recall_memory — retrieve and verify a stored memory. Requires query param or JSON body: id (string).",
           mimeType: "application/json"
         },
         "GET /memory/recall/:id": {
@@ -299,12 +300,11 @@ async function getPaymentMiddleware() {
           accepts: MCP_ACCEPTS,
           description: "Cortex Multi-Agent Memory & Digest MCP server",
           mimeType: "application/json"
-        },
-        "GET /mcp": {
-          accepts: MCP_ACCEPTS,
-          description: "Cortex Multi-Agent Memory & Digest MCP server",
-          mimeType: "application/json"
         }
+        // GET /mcp is intentionally NOT payment-gated: mcpHttp.js's GET handler
+        // always returns the same static info blob regardless of input — there
+        // is no code path where it does real work, so (unlike GET /memory/write)
+        // there's no legitimate case for charging it.
       },
       resourceServer
     );
@@ -333,6 +333,101 @@ const paymentMwReady = getPaymentMiddleware()
       process.env.PAY_TO_ADDRESS || ""
     );
   });
+
+// Discovery gate — runs BEFORE the payment paywall below. A request to
+// /memory/write or /memory/recall that doesn't carry the fields those routes
+// actually need is a discovery probe, not a real attempt, and gets answered
+// for free (no 402, no charge) — the same pattern well-behaved x402 services
+// use to let a client learn the required shape without paying for the
+// privilege. Only requests that already carry real fields fall through to
+// the payment gate. Reuses the routes' own alias-aware normalize() so this
+// can't drift out of sync with what /memory/write and /memory/recall accept.
+const DISCOVERY_ROUTES = {
+  "/memory/write": {
+    aliasMap: memoryRoutes.WRITE_ALIASES,
+    requiredAny: ["agent_id", "type", "content"],
+    service: "cortex-write-memory",
+    info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required once those fields are included."
+  },
+  "/memory/recall": {
+    aliasMap: memoryRoutes.RECALL_ALIASES,
+    requiredAny: ["id"],
+    service: "cortex-recall-memory",
+    info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required once an id is included."
+  }
+};
+
+app.use((req, res, next) => {
+  const config = DISCOVERY_ROUTES[req.path];
+  if (!config) return next();
+
+  const source = req.method === "GET" ? req.query : req.body;
+  const normalized = memoryRoutes.normalize(source || {}, config.aliasMap);
+  const hasRealParams = config.requiredAny.some(
+    (key) => normalized[key] !== undefined && normalized[key] !== ""
+  );
+
+  if (!hasRealParams) {
+    return res.status(200).json({ service: config.service, info: config.info });
+  }
+  next();
+});
+
+// MCP discovery gate — same principle, JSON-RPC shaped. The MCP transport
+// (mcpHttp.js) reports tool errors — including "missing required argument"
+// validation failures — inside the JSON-RPC response body (isError: true),
+// never as an HTTP status. The payment SDK only skips settlement when
+// res.statusCode >= 400, so without this gate EVERY failed tools/call (all 5
+// tools share this one endpoint) would still get charged. Confirmed by
+// testing: an incomplete write_memory call returns HTTP 200 with the error
+// embedded in the body. Anything that isn't a well-formed, fully-argued
+// tools/call is answered for free here, before the paywall ever sees it.
+app.use((req, res, next) => {
+  if (req.path !== "/mcp" || req.method !== "POST") return next();
+
+  const body = req.body;
+  const rpcId = body && body.id !== undefined ? body.id : null;
+
+  if (!body || body.method !== "tools/call") {
+    // Handshake / tools-list / anything else that isn't a real tool
+    // invocation yet — no business action requested, so no charge.
+    return res.status(200).json({
+      jsonrpc: "2.0",
+      id: rpcId,
+      result: {
+        content: [{
+          type: "text",
+          text: "Cortex MCP: send a tools/call request with { name, arguments } to run a tool. A valid x402 payment header is required once the required arguments are included."
+        }]
+      }
+    });
+  }
+
+  const toolName = body.params && body.params.name;
+  const args = (body.params && body.params.arguments) || {};
+  const required = TOOL_REQUIRED_FIELDS[toolName];
+
+  if (required) {
+    const missing = required.filter((key) => args[key] === undefined || args[key] === "");
+    if (missing.length > 0) {
+      return res.status(200).json({
+        jsonrpc: "2.0",
+        id: rpcId,
+        result: {
+          content: [{
+            type: "text",
+            text: `Missing required argument(s) for ${toolName}: ${missing.join(", ")}. A valid x402 payment header is required once they're included.`
+          }],
+          isError: true
+        }
+      });
+    }
+  }
+  // Unknown tool name falls through unchanged — the real MCP handler already
+  // produces the correct "tool not found" error for that case.
+
+  next();
+});
 
 app.use((req, res, next) => {
   if (realPaymentMw) return realPaymentMw(req, res, next);
