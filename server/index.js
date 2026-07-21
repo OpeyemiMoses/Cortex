@@ -238,7 +238,7 @@ async function getPaymentMiddleware() {
             price: PRICE_QUERY,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: query_memory — search an agent's memory history",
+          description: "Cortex: query_memory — search an agent's memory history. Requires agent_id (string).",
           mimeType: "application/json"
         },
         "GET /memory/query": {
@@ -249,7 +249,7 @@ async function getPaymentMiddleware() {
             price: PRICE_QUERY,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: query_memory — search an agent's memory history",
+          description: "Cortex: query_memory — search an agent's memory history. Requires agent_id (string).",
           mimeType: "application/json"
         },
         "POST /memory/digest": {
@@ -260,7 +260,7 @@ async function getPaymentMiddleware() {
             price: PRICE_DIGEST,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
+          description: "Cortex: get_memory_digest — generate a compressed summary of memory history. Requires agent_id (string).",
           mimeType: "application/json"
         },
         "GET /memory/digest": {
@@ -271,7 +271,7 @@ async function getPaymentMiddleware() {
             price: PRICE_DIGEST,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: get_memory_digest — generate a compressed summary of memory history",
+          description: "Cortex: get_memory_digest — generate a compressed summary of memory history. Requires agent_id (string).",
           mimeType: "application/json"
         },
         "POST /memory/my-agents": {
@@ -282,7 +282,7 @@ async function getPaymentMiddleware() {
             price: PRICE_AGENTS,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by your EVM wallet",
+          description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by an EVM wallet. Pass wallet (0x address) to look up any wallet directly; omitted, it uses the x402 payer's own wallet.",
           mimeType: "application/json"
         },
         "GET /memory/my-agents": {
@@ -293,7 +293,7 @@ async function getPaymentMiddleware() {
             price: PRICE_AGENTS,
             extra: { name: "USD₮0", version: "1" }
           }],
-          description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by your EVM wallet",
+          description: "Cortex: list_my_agents — list all namespaced agent IDs claimed/owned by an EVM wallet. Pass wallet (0x address) to look up any wallet directly; omitted, it uses the x402 payer's own wallet.",
           mimeType: "application/json"
         },
         "POST /mcp": {
@@ -335,13 +335,18 @@ const paymentMwReady = getPaymentMiddleware()
   });
 
 // Discovery gate — runs BEFORE the payment paywall below. A request to
-// /memory/write or /memory/recall that doesn't carry the fields those routes
-// actually need is a discovery probe, not a real attempt, and gets answered
-// for free (no 402, no charge) — the same pattern well-behaved x402 services
-// use to let a client learn the required shape without paying for the
-// privilege. Only requests that already carry real fields fall through to
-// the payment gate. Reuses the routes' own alias-aware normalize() so this
-// can't drift out of sync with what /memory/write and /memory/recall accept.
+// /memory/write, /memory/recall, /memory/query, or /memory/digest that
+// doesn't carry the fields that route actually needs is a discovery probe,
+// not a real attempt, and gets answered for free (no 402, no charge) — the
+// same pattern well-behaved x402 services use to let a client learn the
+// required shape without paying for the privilege. Only requests that
+// already carry real fields fall through to the payment gate. Reuses the
+// routes' own alias-aware normalize() so this can't drift out of sync with
+// what each route actually accepts.
+// (query_memory/get_memory_digest already returned 400 on a missing agent_id
+// before any of this existed, so they were never at risk of the "charged for
+// nothing" bug — this addition is purely about matching write/recall's free
+// discovery experience, not fixing a money-losing bug here.)
 const DISCOVERY_ROUTES = {
   "/memory/write": {
     aliasMap: memoryRoutes.WRITE_ALIASES,
@@ -354,6 +359,18 @@ const DISCOVERY_ROUTES = {
     requiredAny: ["id"],
     service: "cortex-recall-memory",
     info: "Send a POST with a JSON body ({ id }) or GET /memory/recall/:id to recall a memory. A valid x402 payment header is required once an id is included."
+  },
+  "/memory/query": {
+    aliasMap: memoryRoutes.AGENT_ID_ALIASES,
+    requiredAny: ["agent_id"],
+    service: "cortex-query-memory",
+    info: "Send agent_id as a query param or JSON body field to search an agent's memory history. A valid x402 payment header is required once agent_id is included."
+  },
+  "/memory/digest": {
+    aliasMap: memoryRoutes.AGENT_ID_ALIASES,
+    requiredAny: ["agent_id"],
+    service: "cortex-memory-digest",
+    info: "Send agent_id as a query param or JSON body field to generate a memory digest. A valid x402 payment header is required once agent_id is included."
   }
 };
 

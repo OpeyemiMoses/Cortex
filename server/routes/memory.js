@@ -41,6 +41,8 @@ const WRITE_ALIASES = {
 };
 const RECALL_ALIASES = { id: ["memoryId"], cid: ["ipfsCid"] };
 const AUTH_ALIASES = { auth_signature: ["authSignature"], auth_timestamp: ["authTimestamp"] };
+const MY_AGENTS_ALIASES = { wallet: ["walletAddress", "address"] };
+const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 async function handleWrite(params, res, payerAddress) {
   try {
@@ -181,11 +183,12 @@ router.get("/digest", (req, res) => handleDigest(normalize(req.query, { ...AGENT
 router.post("/digest", (req, res) => handleDigest(normalize(req.body, { ...AGENT_ID_ALIASES, ...AUTH_ALIASES }), res));
 
 async function handleMyAgents(params, res, payerAddress) {
-  const { auth_signature, auth_timestamp } = params;
+  const { auth_signature, auth_timestamp, wallet: requestedWallet } = params;
   let wallet = null;
 
   if (process.env.CALLER_AUTH_ENFORCED === "true") {
-    // Signature stays authoritative when caller-auth is enforced.
+    // Signature stays authoritative when caller-auth is enforced — no
+    // unauthenticated wallet-param bypass in this mode.
     if (!auth_signature || !auth_timestamp) {
       return res.status(401).json({ error: "auth_signature and auth_timestamp are required." });
     }
@@ -196,24 +199,33 @@ async function handleMyAgents(params, res, payerAddress) {
       return res.status(err.statusCode || 401).json({ error: err.message });
     }
   } else {
-    // CALLER_AUTH_ENFORCED=false (current production default): the x402
-    // payment that already gated this request identifies the caller — no
-    // second, hand-rolled signature the marketplace has no way to produce.
-    // An explicit signature is still honored if one is sent.
-    wallet = payerAddress;
-    if (!wallet && auth_signature && auth_timestamp) {
-      try {
-        const message = auth.buildListAgentsMessage(auth_timestamp);
-        wallet = auth.verifySignature(message, auth_signature, auth_timestamp);
-      } catch {
-        wallet = null;
+    // CALLER_AUTH_ENFORCED=false (current production default): which agent
+    // IDs are namespaced under a wallet is treated as public, on-chain-
+    // derived info here — same trust model as looking up any public
+    // address's holdings — so an explicitly supplied wallet address is
+    // honored directly with no signature required. Falls back to the x402
+    // payer's own wallet, then to a signature, if no wallet is supplied.
+    if (requestedWallet) {
+      if (!WALLET_ADDRESS_RE.test(requestedWallet)) {
+        return res.status(400).json({ error: "wallet must be a 0x-prefixed, 40-hex-character EVM address." });
+      }
+      wallet = requestedWallet;
+    } else {
+      wallet = payerAddress;
+      if (!wallet && auth_signature && auth_timestamp) {
+        try {
+          const message = auth.buildListAgentsMessage(auth_timestamp);
+          wallet = auth.verifySignature(message, auth_signature, auth_timestamp);
+        } catch {
+          wallet = null;
+        }
       }
     }
   }
 
   if (!wallet) {
     return res.status(400).json({
-      error: "Could not determine caller wallet. Pay via x402 to identify your wallet, or provide auth_signature/auth_timestamp."
+      error: "Could not determine caller wallet. Pass a wallet address, pay via x402 to identify your wallet, or provide auth_signature/auth_timestamp."
     });
   }
 
@@ -227,10 +239,10 @@ async function handleMyAgents(params, res, payerAddress) {
 }
 
 router.get("/my-agents", (req, res) =>
-  handleMyAgents(normalize(req.query, AUTH_ALIASES), res, req.payerAddress)
+  handleMyAgents(normalize(req.query, { ...AUTH_ALIASES, ...MY_AGENTS_ALIASES }), res, req.payerAddress)
 );
 router.post("/my-agents", (req, res) =>
-  handleMyAgents(normalize(req.body, AUTH_ALIASES), res, req.payerAddress)
+  handleMyAgents(normalize(req.body, { ...AUTH_ALIASES, ...MY_AGENTS_ALIASES }), res, req.payerAddress)
 );
 
 // Exposed so index.js's pre-payment discovery gate can use the exact same
@@ -239,5 +251,6 @@ router.post("/my-agents", (req, res) =>
 router.normalize = normalize;
 router.WRITE_ALIASES = WRITE_ALIASES;
 router.RECALL_ALIASES = RECALL_ALIASES;
+router.AGENT_ID_ALIASES = AGENT_ID_ALIASES;
 
 module.exports = router;
