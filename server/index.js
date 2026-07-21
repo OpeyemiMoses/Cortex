@@ -390,6 +390,42 @@ app.use((req, res, next) => {
   next();
 });
 
+// /memory/my-agents discovery gate — different shape from the others above,
+// because this route can succeed with ZERO explicit params: the x402
+// payment itself supplies the caller's wallet. That's the route's normal,
+// valid path, not an incomplete probe, so "no params" must NOT be treated
+// as free discovery here — doing so would make the endpoint free for its
+// primary use case. Instead, only pre-empt requests that are guaranteed to
+// fail regardless of payment: an explicitly supplied but malformed wallet,
+// or (when CALLER_AUTH_ENFORCED=true) no signature supplied at all.
+app.use((req, res, next) => {
+  if (req.path !== "/memory/my-agents") return next();
+
+  const source = req.method === "GET" ? req.query : req.body;
+  const normalized = memoryRoutes.normalize(source || {}, {
+    ...memoryRoutes.AUTH_ALIASES,
+    ...memoryRoutes.MY_AGENTS_ALIASES
+  });
+
+  if (normalized.wallet && !memoryRoutes.WALLET_ADDRESS_RE.test(normalized.wallet)) {
+    return res.status(400).json({
+      service: "cortex-list-my-agents",
+      error: "invalid_wallet",
+      info: "wallet must be a 0x-prefixed, 40-hex-character EVM address."
+    });
+  }
+
+  if (process.env.CALLER_AUTH_ENFORCED === "true" && !(normalized.auth_signature && normalized.auth_timestamp)) {
+    return res.status(401).json({
+      service: "cortex-list-my-agents",
+      error: "missing_auth",
+      info: "auth_signature and auth_timestamp are required when CALLER_AUTH_ENFORCED=true."
+    });
+  }
+
+  next();
+});
+
 // MCP discovery gate — same principle, JSON-RPC shaped. The MCP transport
 // (mcpHttp.js) reports tool errors — including "missing required argument"
 // validation failures — inside the JSON-RPC response body (isError: true),
