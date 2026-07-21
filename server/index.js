@@ -374,6 +374,18 @@ const DISCOVERY_ROUTES = {
   }
 };
 
+// A request that already carries a payment signature has committed funds —
+// even if its params are incomplete, that's a broken paid attempt, not a
+// free discovery probe. Route it to the real handler instead, where it gets
+// a proper 400 (handleWrite's own zod validation) with field-level detail.
+// This can't cause a stray charge: the OKX x402 SDK middleware only settles
+// when the downstream response status is < 400, so an invalid paid request
+// still ends up unsettled — the payer just gets told what's actually wrong
+// instead of a misleading free "here's how to use this" blurb.
+function hasPaymentAuth(req) {
+  return Boolean(req.headers["payment-signature"] || req.headers["x-payment"]);
+}
+
 app.use((req, res, next) => {
   const config = DISCOVERY_ROUTES[req.path];
   if (!config) return next();
@@ -384,7 +396,7 @@ app.use((req, res, next) => {
     (key) => normalized[key] !== undefined && normalized[key] !== ""
   );
 
-  if (!hasRealParams) {
+  if (!hasRealParams && !hasPaymentAuth(req)) {
     return res.status(200).json({ service: config.service, info: config.info });
   }
   next();
