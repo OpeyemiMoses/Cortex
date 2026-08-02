@@ -94,12 +94,13 @@ function parseServiceParams(raw) {
   }
 
   return {
-    agent_id:   map["agentId"]     || map["agent_id"]     || "",
-    type:       map["memoryType"]  || map["type"]          || "event",
-    content:    map["memoryContent"] || map["content"]     || "",
-    visibility: map["visibility"]  || "private",
-    metadata:   {},
-    tags:       [],
+    agent_id:     map["agentId"]     || map["agent_id"]     || "",
+    type:         map["memoryType"]  || map["type"]          || "event",
+    content:      map["memoryContent"] || map["content"]     || "",
+    visibility:   map["visibility"]  || "private",
+    notify_email: map["notifyEmail"] || map["notify_email"] || map["email"] || undefined,
+    metadata:     {},
+    tags:         [],
   };
 }
 
@@ -193,12 +194,15 @@ async function executeDeliver(deliverArgs, message) {
     }
     memoryRecord = await memoryService.writeMemory(payload, { skipAuth: true });
     deliverableContent = JSON.stringify({
-      status:      "ok",
-      id:          memoryRecord.id,
-      arweave_tx:  memoryRecord.arweave_tx_id,
-      ipfs_cid:    memoryRecord.ipfs_cid,
-      onchain_tx:  memoryRecord.onchain_tx_hash,
-      written_at:  memoryRecord.written_at,
+      status:          "ok",
+      id:              memoryRecord.id,
+      arweave_tx:      memoryRecord.arweave_tx_id,
+      ipfs_cid:        memoryRecord.ipfs_cid,
+      onchain_tx:      memoryRecord.onchain_tx_hash,
+      onchain_tx_link: memoryRecord.onchain_tx_link,
+      x402_tx_hash:    memoryRecord.x402_tx_hash,
+      x402_tx_link:    memoryRecord.x402_tx_link,
+      written_at:      memoryRecord.written_at,
     });
     console.log(`[a2aWorker] memory written: id=${memoryRecord.id}`);
   } catch (err) {

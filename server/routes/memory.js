@@ -37,16 +37,17 @@ const AGENT_ID_ALIASES = { agent_id: ["agentId"] };
 const WRITE_ALIASES = {
   agent_id: ["agentId"],
   type: ["memoryType"],
-  content: ["memoryContent"]
+  content: ["memoryContent"],
+  notify_email: ["notifyEmail", "email"]
 };
 const RECALL_ALIASES = { id: ["memoryId"], cid: ["ipfsCid"] };
 const AUTH_ALIASES = { auth_signature: ["authSignature"], auth_timestamp: ["authTimestamp"] };
 const MY_AGENTS_ALIASES = { wallet: ["walletAddress", "address"] };
 const WALLET_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
-async function handleWrite(params, res, payerAddress) {
+async function handleWrite(params, res, payerAddress, x402TxHash) {
   try {
-    const record = await memoryService.writeMemory(params, { payerAddress });
+    const record = await memoryService.writeMemory(params, { payerAddress, x402TxHash });
     res.status(201).json({ memory: record });
   } catch (err) {
     if (err.statusCode === 400) {
@@ -61,7 +62,7 @@ async function handleWrite(params, res, payerAddress) {
 }
 
 router.post("/write", (req, res) =>
-  handleWrite(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }), res, req.payerAddress)
+  handleWrite(normalize(req.body, { ...WRITE_ALIASES, ...AUTH_ALIASES }), res, req.payerAddress, req.x402TxHash)
 );
 
 // GET fallback — the marketplace's x402 reachability pre-check
@@ -84,7 +85,7 @@ router.get("/write", (req, res) => {
       info: "Send a POST with a JSON body (agent_id, type, content, visibility) to write a memory. A valid x402 payment header is required."
     });
   }
-  return handleWrite(params, res, req.payerAddress);
+  return handleWrite(params, res, req.payerAddress, req.x402TxHash);
 });
 
 async function handleRecall(id, params, res) {

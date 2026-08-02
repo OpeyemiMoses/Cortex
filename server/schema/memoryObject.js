@@ -37,6 +37,7 @@ const MemoryObjectInput = z.object({
   visibility: VisibilityEnum.optional().default("private"),
   embedding: z.array(z.number()).optional(),
   tags: z.array(z.string()).optional().default([]),
+  notify_email: z.string().email("Invalid email format").optional().nullable(),
   auth_signature: z.string().optional(),
   auth_timestamp: z.union([z.string(), z.number()]).optional()
 });
@@ -47,6 +48,9 @@ const MemoryObjectRecord = MemoryObjectInput.extend({
   arweave_tx_id: z.string().nullable(),
   ipfs_cid: z.string().nullable(),
   onchain_tx_hash: z.string().nullable(),
+  onchain_tx_link: z.string().nullable().optional(),
+  x402_tx_hash: z.string().nullable().optional(),
+  x402_tx_link: z.string().nullable().optional(),
   written_at: z.string() // ISO 8601
 });
 

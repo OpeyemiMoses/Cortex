@@ -4,6 +4,8 @@ const ipfs = require("./storage/ipfsAdapter");
 const registry = require("./registry/onchainRegistry");
 const cache = require("./cache/redisIndex");
 const auth = require("./auth/callerAuth");
+const emailService = require("./emailService");
+const { getExplorerTxLink } = require("../utils/xlayerExplorer");
 
 /**
  * These three functions are the actual product — everything else (Express
@@ -22,6 +24,17 @@ async function writeMemory(rawPayload, options = {}) {
   }
 
   const payload = parsed.data;
+
+  // Extract one-time email delivery instruction
+  const notifyEmail = payload.notify_email || null;
+
+  // Extract x402 tx hash if passed in options or raw payload
+  const x402TxHash =
+    options.x402TxHash ||
+    options.x402_tx_hash ||
+    rawPayload.x402_tx_hash ||
+    rawPayload.x402TxHash ||
+    null;
 
   let recoveredWallet = null;
   if (process.env.CALLER_AUTH_ENFORCED === "true" && !options.skipAuth) {
@@ -47,7 +60,9 @@ async function writeMemory(rawPayload, options = {}) {
     payload.agent_id = auth.getNamespacedId(agent_id, recoveredWallet);
   }
 
-  // Strip auth credentials before saving/hashing
+  // REQUIREMENT 1: notify_email must NEVER be included in what gets stored/hashed.
+  // Strip out notify_email and auth credentials before saving/hashing.
+  delete payload.notify_email;
   delete payload.auth_signature;
   delete payload.auth_timestamp;
 
@@ -61,7 +76,17 @@ async function writeMemory(rawPayload, options = {}) {
 
   const { onchain_tx_hash } = await registry.anchor(payload.agent_id, id);
 
-  const record = { ...bodyForMirror, ipfs_cid: cid, onchain_tx_hash };
+  const onchain_tx_link = getExplorerTxLink(onchain_tx_hash);
+  const x402_tx_link = getExplorerTxLink(x402TxHash);
+
+  const record = {
+    ...bodyForMirror,
+    ipfs_cid: cid,
+    onchain_tx_hash,
+    onchain_tx_link,
+    x402_tx_hash: x402TxHash,
+    x402_tx_link
+  };
 
   await cache.addToIndex(payload.agent_id, id);
   await cache.cacheSet(id, record);
@@ -80,6 +105,21 @@ async function writeMemory(rawPayload, options = {}) {
 
   if (walletForIndex) {
     await cache.addAgentToWallet(walletForIndex, payload.agent_id);
+  }
+
+  // REQUIREMENT 2: If notify_email fails, it must NOT cause write/save operation to fail.
+  if (notifyEmail) {
+    try {
+      await emailService.sendMemoryNotification({
+        email: notifyEmail,
+        memoryRecord: record,
+        x402TxHash,
+        x402Link: x402_tx_link,
+        anchoredLink: onchain_tx_link
+      });
+    } catch (emailErr) {
+      console.error("[memoryService] Failed to send email notification:", emailErr?.message || emailErr);
+    }
   }
 
   return record;

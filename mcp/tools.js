@@ -22,6 +22,7 @@ function registerTools(server) {
       metadata: z.record(z.any()).optional(),
       visibility: VisibilityEnum.optional(),
       tags: z.array(z.string()).optional(),
+      notify_email: z.string().email().optional().describe("Optional email address to receive a one-time delivery notification of the written memory"),
       auth_signature: z.string().optional().describe("EVM wallet signature (required if CALLER_AUTH_ENFORCED=true)"),
       auth_timestamp: z.union([z.string(), z.number()]).optional().describe("Unix millisecond timestamp used in signature (required if CALLER_AUTH_ENFORCED=true)")
     },
