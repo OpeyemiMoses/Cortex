@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "okx-agent-payments-protocol": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-agent-payments-protocol/SKILL.md",
+      "computedHash": "a538c206bc298118b72a932a2566bf788d8ffe73c2bfbab96cefb297e055ea42"
+    },
+    "okx-agentic-wallet": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-agentic-wallet/SKILL.md",
+      "computedHash": "df0114e95e85917512cf5372ba710683511cf964b78d1d9f68e3acb3120bbce3"
+    },
+    "okx-ai": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-ai/SKILL.md",
+      "computedHash": "304214a9818f7a9d8eb57a7af14170d2c83b08524a13c07c47b046dcc6586590"
+    },
+    "okx-dapp-discovery": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-dapp-discovery/SKILL.md",
+      "computedHash": "fb2f7daf608aa9fefa82181ecbbb916dd56fc87bfd068696d589fac93f6641ea"
+    },
+    "okx-defi": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-defi/SKILL.md",
+      "computedHash": "519cb0bb45bed5356dc0fad796bd79136e9f9dd843b50885283d5d1cb38a7989"
+    },
+    "okx-dex-market": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-dex-market/SKILL.md",
+      "computedHash": "640fbc26127898112ce80333bda948a9ded844713cd07c3808bd1619b1cdf362"
+    },
+    "okx-growth-competition": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-growth-competition/SKILL.md",
+      "computedHash": "e8d6aad88b40e4aef12bf23bdaf27f6f91a42f364d4178cdbadab249c4a26b4f"
+    },
+    "okx-guide": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-guide/SKILL.md",
+      "computedHash": "767de4c0151eb7670081bc8a2a3238fff88a771e3da4186650748b333d654a48"
+    }
+  }
+}

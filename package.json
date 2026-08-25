@@ -12,7 +12,8 @@
     "registry:compile": "hardhat compile",
     "registry:deploy:testnet": "hardhat run scripts/deployRegistry.js --network xlayerTestnet",
     "registry:deploy:mainnet": "hardhat run scripts/deployRegistry.js --network xlayerMainnet",
-    "mcp:start": "node mcp/server.js"
+    "mcp:start": "node mcp/server.js",
+    "test": "node test/prePaymentValidation.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",

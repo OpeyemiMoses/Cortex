@@ -334,99 +334,13 @@ const paymentMwReady = getPaymentMiddleware()
     );
   });
 
-// /memory/my-agents discovery gate — different shape from the others above,
-// because this route can succeed with ZERO explicit params: the x402
-// payment itself supplies the caller's wallet. That's the route's normal,
-// valid path, not an incomplete probe, so "no params" must NOT be treated
-// as free discovery here — doing so would make the endpoint free for its
-// primary use case. Instead, only pre-empt requests that are guaranteed to
-// fail regardless of payment: an explicitly supplied but malformed wallet,
-// or (when CALLER_AUTH_ENFORCED=true) no signature supplied at all.
-app.use((req, res, next) => {
-  if (req.path !== "/memory/my-agents") return next();
+const { prePaymentValidator } = require("./middleware/prePaymentValidator");
 
-  // Merge query + body — don't assume params only arrive in req.body for
-  // non-GET requests.
-  const source = { ...(req.query || {}), ...(req.body || {}) };
-  const normalized = memoryRoutes.normalize(source, {
-    ...memoryRoutes.AUTH_ALIASES,
-    ...memoryRoutes.MY_AGENTS_ALIASES
-  });
-
-  if (normalized.wallet && !memoryRoutes.WALLET_ADDRESS_RE.test(normalized.wallet)) {
-    return res.status(400).json({
-      service: "cortex-list-my-agents",
-      error: "invalid_wallet",
-      info: "wallet must be a 0x-prefixed, 40-hex-character EVM address."
-    });
-  }
-
-  if (process.env.CALLER_AUTH_ENFORCED === "true" && !(normalized.auth_signature && normalized.auth_timestamp)) {
-    return res.status(401).json({
-      service: "cortex-list-my-agents",
-      error: "missing_auth",
-      info: "auth_signature and auth_timestamp are required when CALLER_AUTH_ENFORCED=true."
-    });
-  }
-
-  next();
-});
-
-// MCP discovery gate — same principle, JSON-RPC shaped. The MCP transport
-// (mcpHttp.js) reports tool errors — including "missing required argument"
-// validation failures — inside the JSON-RPC response body (isError: true),
-// never as an HTTP status. The payment SDK only skips settlement when
-// res.statusCode >= 400, so without this gate EVERY failed tools/call (all 5
-// tools share this one endpoint) would still get charged. Confirmed by
-// testing: an incomplete write_memory call returns HTTP 200 with the error
-// embedded in the body. Anything that isn't a well-formed, fully-argued
-// tools/call is answered for free here, before the paywall ever sees it.
-app.use((req, res, next) => {
-  if (req.path !== "/mcp" || req.method !== "POST") return next();
-
-  const body = req.body;
-  const rpcId = body && body.id !== undefined ? body.id : null;
-
-  if (!body || body.method !== "tools/call") {
-    // Handshake / tools-list / anything else that isn't a real tool
-    // invocation yet — no business action requested, so no charge.
-    return res.status(200).json({
-      jsonrpc: "2.0",
-      id: rpcId,
-      result: {
-        content: [{
-          type: "text",
-          text: "Cortex MCP: send a tools/call request with { name, arguments } to run a tool. A valid x402 payment header is required once the required arguments are included."
-        }]
-      }
-    });
-  }
-
-  const toolName = body.params && body.params.name;
-  const args = (body.params && body.params.arguments) || {};
-  const required = TOOL_REQUIRED_FIELDS[toolName];
-
-  if (required) {
-    const missing = required.filter((key) => args[key] === undefined || args[key] === "");
-    if (missing.length > 0) {
-      return res.status(200).json({
-        jsonrpc: "2.0",
-        id: rpcId,
-        result: {
-          content: [{
-            type: "text",
-            text: `Missing required argument(s) for ${toolName}: ${missing.join(", ")}. A valid x402 payment header is required once they're included.`
-          }],
-          isError: true
-        }
-      });
-    }
-  }
-  // Unknown tool name falls through unchanged — the real MCP handler already
-  // produces the correct "tool not found" error for that case.
-
-  next();
-});
+// Pre-payment parameter validation gate — OKX.AI Listing Compliance.
+// Validates parameters for /memory/* and /mcp endpoints BEFORE returning x402
+// payment challenges, so missing or invalid parameter requests return 400 Bad
+// Request immediately without requesting or settling payment.
+app.use(prePaymentValidator);
 
 app.use((req, res, next) => {
   if (realPaymentMw) return realPaymentMw(req, res, next);
