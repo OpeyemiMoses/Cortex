@@ -111,6 +111,16 @@ async function runTests() {
     assert.strictEqual(res.data.service, "cortex-write-memory");
   });
 
+  await test("POST /memory/write with agent_id='4961' (marketplace service ID) returns 400 Bad Request", async () => {
+    const res = await request("POST", "/memory/write", {
+      agent_id: "4961",
+      type: "event",
+      content: "some content"
+    });
+    assert.strictEqual(res.status, 400, `Expected 400, got ${res.status}`);
+    assert.strictEqual(res.data.error, "invalid_agent_id");
+  });
+
   await test("POST /memory/write with VALID parameters reaches payment middleware (returns 402 when unpaid)", async () => {
     const res = await request("POST", "/memory/write", {
       agent_id: "test-agent",
@@ -164,6 +174,12 @@ async function runTests() {
     const res = await request("GET", "/memory/query?agent_id=my-agent&type=unknown_type");
     assert.strictEqual(res.status, 400, `Expected 400, got ${res.status}`);
     assert.strictEqual(res.data.service, "cortex-query-memory");
+  });
+
+  await test("GET /memory/query with agent_id='4961' (marketplace service ID) returns 400 Bad Request", async () => {
+    const res = await request("GET", "/memory/query?agent_id=4961");
+    assert.strictEqual(res.status, 400, `Expected 400, got ${res.status}`);
+    assert.strictEqual(res.data.error, "invalid_agent_id");
   });
 
   await test("GET /memory/query with valid agent_id reaches payment middleware (returns 402 when unpaid)", async () => {
@@ -223,6 +239,21 @@ async function runTests() {
       }
     });
     assert.strictEqual(res.status, 402);
+  });
+
+  await test("POST /mcp with agent_id='4961' (marketplace service ID) returns error result without charging", async () => {
+    const res = await request("POST", "/mcp", {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "write_memory",
+        arguments: { agent_id: "4961", type: "event", content: "hello" }
+      }
+    });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.data.result.isError, true);
+    assert(res.data.result.content[0].text.includes("marketplace service ID"));
   });
 
   server.close();

@@ -16,7 +16,7 @@ function registerTools(server) {
     "write_memory",
     "Permanently store a structured memory object for an agent. Anchored on Arweave (permanent storage) and X Layer (on-chain verification).",
     {
-      agent_id: z.string().describe("Identifier of the agent this memory belongs to"),
+      agent_id: z.string().describe("The unique identifier of YOUR agent whose memory is being saved (do NOT use the Cortex marketplace service agent ID 4961)"),
       type: MemoryTypeEnum,
       content: z.string().max(50_000),
       metadata: z.record(z.any()).optional(),
@@ -61,7 +61,7 @@ function registerTools(server) {
     "query_memory",
     "Query an agent's memory history, optionally filtered by type, date-range, and paginated.",
     {
-      agent_id: z.string(),
+      agent_id: z.string().describe("The unique identifier of YOUR agent whose memory you want to query (do NOT use the Cortex marketplace service agent ID 4961)"),
       type: MemoryTypeEnum.optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
@@ -92,7 +92,7 @@ function registerTools(server) {
     "get_memory_digest",
     "Generate a compressed summary of an agent's memory history over a time range (Memory Decay feature). Raw memories are never deleted or altered — this creates an additional digest object, anchored the same way as any memory, with source_hashes pointing back to every original it summarizes for full audit.",
     {
-      agent_id: z.string(),
+      agent_id: z.string().describe("The unique identifier of YOUR agent whose memories you want to summarize (do NOT use the Cortex marketplace service agent ID 4961)"),
       from: z.string().optional().describe("ISO date string, defaults to the beginning of history"),
       to: z.string().optional().describe("ISO date string, defaults to now"),
       auth_signature: z.string().optional().describe("EVM wallet signature (required if CALLER_AUTH_ENFORCED=true)"),

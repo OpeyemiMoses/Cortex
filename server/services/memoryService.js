@@ -4,6 +4,7 @@ const ipfs = require("./storage/ipfsAdapter");
 const registry = require("./registry/onchainRegistry");
 const cache = require("./cache/redisIndex");
 const auth = require("./auth/callerAuth");
+const CORTEX_MARKETPLACE_AGENT_ID = process.env.OKX_A2A_AGENT_ID || "4961";
 
 /**
  * These three functions are the actual product — everything else (Express
@@ -22,6 +23,12 @@ async function writeMemory(rawPayload, options = {}) {
   }
 
   const payload = parsed.data;
+
+  if (payload.agent_id === CORTEX_MARKETPLACE_AGENT_ID) {
+    const err = new Error(`agent_id cannot be the Cortex marketplace service ID ("${CORTEX_MARKETPLACE_AGENT_ID}"). Please provide your own unique agent ID.`);
+    err.statusCode = 400;
+    throw err;
+  }
 
   let recoveredWallet = null;
   if (process.env.CALLER_AUTH_ENFORCED === "true" && !options.skipAuth) {

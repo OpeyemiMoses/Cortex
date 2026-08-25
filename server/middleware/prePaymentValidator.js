@@ -3,6 +3,8 @@ const { TOOL_REQUIRED_FIELDS } = require("../../mcp/tools");
 const memoryRoutes = require("../routes/memory");
 const auth = require("../services/auth/callerAuth");
 
+const CORTEX_MARKETPLACE_AGENT_ID = process.env.OKX_A2A_AGENT_ID || "4961";
+
 /**
  * Pre-Payment Validation Middleware
  *
@@ -32,6 +34,14 @@ function prePaymentValidator(req, res, next) {
         service: "cortex-write-memory",
         error: `Invalid memory object: ${issues}`,
         details: parsed.error.flatten()
+      });
+    }
+
+    if (normalized.agent_id === CORTEX_MARKETPLACE_AGENT_ID) {
+      return res.status(400).json({
+        service: "cortex-write-memory",
+        error: "invalid_agent_id",
+        message: `agent_id cannot be the Cortex marketplace service ID ("${CORTEX_MARKETPLACE_AGENT_ID}"). Please provide your own unique agent ID.`
       });
     }
 
@@ -114,6 +124,14 @@ function prePaymentValidator(req, res, next) {
       });
     }
 
+    if (normalized.agent_id === CORTEX_MARKETPLACE_AGENT_ID) {
+      return res.status(400).json({
+        service: "cortex-query-memory",
+        error: "invalid_agent_id",
+        message: `agent_id cannot be the Cortex marketplace service ID ("${CORTEX_MARKETPLACE_AGENT_ID}"). Please provide your own unique agent ID.`
+      });
+    }
+
     if (normalized.type) {
       const parsedType = MemoryTypeEnum.safeParse(normalized.type);
       if (!parsedType.success) {
@@ -143,6 +161,14 @@ function prePaymentValidator(req, res, next) {
         service: "cortex-memory-digest",
         error: "missing_params",
         message: "agent_id is required"
+      });
+    }
+
+    if (normalized.agent_id === CORTEX_MARKETPLACE_AGENT_ID) {
+      return res.status(400).json({
+        service: "cortex-memory-digest",
+        error: "invalid_agent_id",
+        message: `agent_id cannot be the Cortex marketplace service ID ("${CORTEX_MARKETPLACE_AGENT_ID}"). Please provide your own unique agent ID.`
       });
     }
 
@@ -215,6 +241,20 @@ function prePaymentValidator(req, res, next) {
             content: [{
               type: "text",
               text: `Missing required argument(s) for ${toolName}: ${missing.join(", ")}. A valid x402 payment header is required once they're included.`
+            }],
+            isError: true
+          }
+        });
+      }
+
+      if (args.agent_id === CORTEX_MARKETPLACE_AGENT_ID) {
+        return res.status(200).json({
+          jsonrpc: "2.0",
+          id: rpcId,
+          result: {
+            content: [{
+              type: "text",
+              text: `Invalid agent_id "${CORTEX_MARKETPLACE_AGENT_ID}": this is the Cortex marketplace service ID. Please provide your own unique agent ID.`
             }],
             isError: true
           }
