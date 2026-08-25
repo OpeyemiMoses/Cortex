@@ -4,7 +4,7 @@ description: "Use when an agent hits HTTP 402 / payment-required, or the user me
 license: MIT
 metadata:
   author: okx
-  version: "4.2.6"
+  version: "4.3.1"
   homepage: "https://web3.okx.com"
 ---
 
@@ -90,10 +90,13 @@ Each 402 signal (or paymentId) → CLI command → reference. Detailed gating + 
 You do exactly two reasoning rounds.** (For `WWW-Authenticate: Payment` charge /
 session challenges, skip this and use the protocol-detection steps below.)
 
-### Step A1 — Extract params (round 1)
-From the user prompt (Entry A) or the task payment node (Entry B), extract the
-endpoint `url` and any known business params. Do NOT curl, decode, or convert
-anything yourself.
+### Step A1 — Parameter Collection & Marketplace ID Separation (round 1)
+From the user prompt (Entry A) or the task payment node (Entry B), extract the endpoint `url`.
+
+> ⚠️ **CRITICAL PARAMETER RULES:**
+> 1. **Never auto-fill parameters on your own**: Do NOT guess, invent, or silently auto-fill endpoint parameters.
+> 2. **Never use Marketplace Service ID for endpoint `agent_id`**: A prompt stating "Agent ID is <N>" or "Agent #<N>" in the trigger/routing context identifies the **Marketplace Service Provider** (e.g., Cortex is #4961, ChainIntel is #xxxx). It is **NEVER** the caller's endpoint parameter `agent_id`. The caller's `agent_id` represents the user's own agent identity/partition.
+> 3. **Ask for parameters FIRST before payment**: If the endpoint requires parameters (e.g. `agent_id`, `type`, `content`, `address`, `target`, `tx_hash`, `query`, etc.) and the user has not explicitly provided their business inputs for this specific request, **STOP and ask the user to provide the required parameters FIRST** before generating the payment quote and confirmation card.
 
 ### Step A2 — Quote
 Run: `onchainos payment quote <url> [--param key=value ...] [--method GET|POST|...]`
@@ -141,7 +144,10 @@ replays, and returns the receipt — it never re-fetches the 402. Read `data.sta
 
 You already have the original HTTP response. If it is **not 402**, return the body directly. Otherwise → Step A2.
 
-**Capture any request parameters the user's prompt supplies** (e.g. "weather in San Francisco" → `city=San Francisco`, `token=0x…`; "translate to Chinese" → `lang=zh`). Record each as `name → value` for the Step A3-Params plan — values given here are **never re-asked**, just shown in the confirmation card. Keep them even if the first request didn't need them; the seller may require them on the paid replay.
+**Parameter Extraction & Collection Rules:**
+1. Do not auto-fill or invent parameters.
+2. Never confuse the Marketplace Provider Agent ID (e.g. 4961) with the caller's parameter `agent_id`.
+3. If parameters are required and not explicitly provided by the user for the business action, ask the user to provide them BEFORE requesting payment confirmation.
 
 ## Step A2: Detect the protocol
 
@@ -250,7 +256,10 @@ Ambiguous → add nothing, replay unchanged.
 
 ### Fill values
 
-Per entry, resolve `value`: (1) user's prompt (Step A1) → `source=prompt`, don't re-ask; (2) conversation context → `source=context`; (3) still missing **and required** → ask the user, one grouped question for all of them (a legitimate gate, not narration — ZERO-TEXT-ON-TRIGGER doesn't forbid it). Optional + unresolved → drop.
+Per entry, resolve `value`:
+1. If the required parameter is `agent_id` or represents user/caller identity or payload input, **NEVER** fill it with a Marketplace Listing / Provider Agent ID (e.g. `4961`).
+2. If any required business parameters are not explicitly provided by the user for this action, **STOP and ask the user to provide them** before quoting or proceeding to the payment confirmation card.
+3. Optional + unresolved → drop.
 
 ## Step A3.5: Multi-scheme recommendation (when applicable)
 
@@ -307,7 +316,7 @@ onchainos wallet status
 
 - **Logged in** → Step A6.
 - **Not logged in (`accepts`-based path)** → ask the user to choose between (1) wallet login (TEE signing) or (2) local private key (`onchainos payment pay-local`, supports `exact + EIP-3009`, `exact + Permit2`, and `upto` — `aggr_deferred` not supported, requires TEE session key). Don't read files or check env vars until the user picks.
-- **Not logged in (`WWW-Authenticate: Payment` path)** → ask the user to log in via email OTP or AK. **TEE-only — no local-key fallback for this path** (only the `accepts`-based path has one).
+- **Not logged in (`WWW-Authenticate: Payment` path)** → ask the user to log in via `onchainos wallet login`. **TEE-only — no local-key fallback for this path** (only the `accepts`-based path has one).
 
 ## Step A6: Hand off to the scheme/intent reference
 
@@ -342,7 +351,7 @@ If the user says only "I want to pay" without a paymentId — STOP and ask the u
 Both `create` and `pay` require a live wallet session. Run `onchainos wallet status`:
 
 - **Logged in** → proceed (load the reference and follow it).
-- **Not logged in** → ask the user to log in via `onchainos wallet login` or `onchainos wallet login <email>`. **Do NOT sign without a live session.**
+- **Not logged in** → ask the user to log in via `onchainos wallet login`. **Do NOT sign without a live session.**
 
 ## Step B3: Hand off to `references/a2a_charge.md`
 
